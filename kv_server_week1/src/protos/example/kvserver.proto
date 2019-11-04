@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package kvserver;
+
+service Kvdb {
+
+    rpc Get (GetRequest) returns (GetResponse) {}
+    rpc Put (PutRequest) returns (PutResponse) {}
+    rpc Delete (DeleteRequest) returns (DeleteResponse) {}
+    rpc Scan (ScanRequest) returns (ScanResponse) {}
+}
+enum ResponseStatus{
+    kNoType = 0;
+    kSuccess = 1;
+    kNotFound = 2;
+    kFailed = 3;
+}
+
+message GetRequest {
+    string key = 1;
+}
+message GetResponse {
+    ResponseStatus status = 1;
+    string value = 2;
+}
+
+message PutRequest {
+    string key = 1;
+    string value = 2;
+}
+
+message PutResponse {
+    ResponseStatus status = 1;
+}
+
+message DeleteRequest {
+    string key = 1;
+}
+message DeleteResponse {
+    ResponseStatus status = 1;
+}
+
+message ScanRequest {
+    string key_start = 1;   // key_start = key < key_end
+    string key_end = 2;
+}
+
+message ScanResponse {
+    ResponseStatus status = 1;
+    map<string, string> key_value = 2;
+}

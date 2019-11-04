@@ -1,0 +1,27 @@
+version: 2.1
+jobs:
+  dss:
+    docker:
+      - image: circleci/rust:stretch
+    environment:
+      RUST_BACKTRACE: "1"
+      RUSTFLAGS: "-Dwarnings"
+    working_directory: ~/talent-plan/dss
+    steps:
+      - checkout:
+          path: ~/talent-plan
+      - run: rustup override set nightly-2019-03-05
+      - run: rustup component add clippy-preview rustfmt-preview
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all --tests -- -D clippy::all
+      - run: cargo test -p labcodec -p labrpc
+      - run: cargo test -p raft -- --test raft::persister
+      - run:
+          command: cargo test -p linearizability
+          no_output_timeout: 30m
+
+workflows:
+  version: 2
+  ci-test:
+      jobs:
+        - dss

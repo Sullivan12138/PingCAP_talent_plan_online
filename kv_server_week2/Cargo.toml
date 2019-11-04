@@ -1,0 +1,31 @@
+[package]
+name = "kv_server_week1"
+version = "0.1.0"
+authors = ["taowei <2909683353@qq.com>"]
+edition = "2018"
+build = "build.rs"
+
+[lib]
+name = "lib"
+path = "src/lib.rs"
+
+
+[[bin]]
+name = "server"
+path = "src/server.rs"
+
+[[bin]]
+name = "client"
+path = "src/client.rs"
+
+[dependencies]
+protobuf = "~2"
+futures = "0.1.16"
+grpcio = { version = "0.4", default-features = false, features = ["protobuf-codec"] }
+chrono = "0.4"
+serde = { version = "1.0.89", features = ["derive"] }
+serde_json = "1.0.39"
+
+
+[build-dependencies]
+protoc-grpcio = "1.0.1"
