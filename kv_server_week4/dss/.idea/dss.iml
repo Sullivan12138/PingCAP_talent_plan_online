@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module type="JAVA_MODULE" version="4">
+  <component name="NewModuleRootManager" inherit-compiler-output="true">
+    <exclude-output />
+    <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/raft/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/raft/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/raft/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/raft/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/labcodec/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/labcodec/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/labcodec/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/labcodec/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/labrpc/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/labrpc/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/labrpc/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/labrpc/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/percolator/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/percolator/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/percolator/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/percolator/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/linearizability/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/linearizability/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/linearizability/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/linearizability/benches" isTestSource="true" />
+      <excludeFolder url="file://$MODULE_DIR$/labcodec/target" />
+      <excludeFolder url="file://$MODULE_DIR$/labrpc/target" />
+      <excludeFolder url="file://$MODULE_DIR$/linearizability/target" />
+      <excludeFolder url="file://$MODULE_DIR$/percolator/target" />
+      <excludeFolder url="file://$MODULE_DIR$/raft/target" />
+      <excludeFolder url="file://$MODULE_DIR$/target" />
+    </content>
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+</module>

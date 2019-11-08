@@ -1,12 +1,9 @@
-extern crate grpcio;
-extern crate lib;
-
 use std::sync::Arc;
-
+use crate::protos;
 use grpcio::{ChannelBuilder, EnvBuilder};
 
-use lib::protos::kvserver::{DeleteRequest, GetRequest, PutRequest, ResponseStatus, ScanRequest};
-use lib::protos::kvserver_grpc::KvdbClient;
+use protos::kvserver::{DeleteRequest, GetRequest, PutRequest, ResponseStatus, ScanRequest};
+use protos::kvserver_grpc::KvdbClient;
 
 use std::collections::HashMap;
 pub struct Client {

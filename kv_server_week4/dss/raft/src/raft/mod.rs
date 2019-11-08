@@ -1,17 +1,15 @@
-// use std::sync::mpsc::Receiver;
+use rand::Rng;
+use std::cmp;
+use std::sync::mpsc;
+use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
-use std::sync::mpsc::Sender;
-use std::sync::mpsc;
 use std::time::Duration;
-use std::cmp;
-use rand::Rng;
-// use crate::kvraft::service::kv::__futures::Future;
 
 use futures::sync::mpsc::UnboundedSender;
-use labrpc::RpcFuture;
 use futures::Future;
+use labrpc::RpcFuture;
 
 #[cfg(test)]
 pub mod config;
@@ -24,7 +22,6 @@ mod tests;
 use self::errors::*;
 use self::persister::*;
 use self::service::*;
-// use crate::kvraft::server::OpEntry as Entry;
 const TIMEOUT_LOWER_BOUND: u64 = 150;
 const TIMEOUT_UPPER_BOUND: u64 = 300;
 const APPEND_ENTRIES_INTERVAL: u64 = 50;
@@ -32,9 +29,9 @@ const MAX_SEND_ONCE: u64 = 500;
 
 #[macro_export]
 macro_rules! my_debug {
-    ($($arg: tt)*) => (
-        println!("Debug[{}:{}]: {}", file!(), line!(),format_args!($($arg)*));
-    )
+    ($($arg: tt)*) => {
+        // println!("Debug[{}:{}]: {}", file!(), line!(),format_args!($($arg)*));
+    };
 }
 pub struct ApplyMsg {
     pub command_valid: bool,
@@ -43,7 +40,6 @@ pub struct ApplyMsg {
     pub is_snapshot: bool,
     pub data: Vec<u8>,
 }
-
 /// State of a raft peer.
 #[derive(Default, Clone, Debug)]
 pub struct State {
@@ -61,19 +57,19 @@ impl State {
     pub fn is_leader(&self) -> bool {
         self.is_leader
     }
-
+    /// Wheteher this peer believes it is the candidate.
     pub fn is_candidate(&self) -> bool {
         self.is_candidate
     }
-    
 }
+/// the state a node shall save when persisting
 #[derive(Clone, PartialEq, Message)]
 pub struct RaftState {
     #[prost(uint64, tag = "1")]
     pub term: u64,
 
     #[prost(int64, tag = "2")]
-    pub voted_for: i64,         
+    pub voted_for: i64,
 
     #[prost(bytes, repeated, tag = "3")]
     pub logs: Vec<Vec<u8>>,
@@ -84,9 +80,9 @@ pub struct RaftState {
     #[prost(uint64, tag = "5")]
     pub snapshot_term: u64,
 }
+/// the log structure
 #[derive(Clone, PartialEq, Message)]
 pub struct Entry {
-
     #[prost(uint64, tag = "1")]
     pub term: u64,
 
@@ -121,13 +117,19 @@ pub struct Raft {
     // Your data here (2A, 2B, 2C).
     // Look at the paper's Figure 2 for a description of what
     // state a Raft server must maintain.
-    voted_for: Option<usize>,//投票给的节点的id,因为前面用usize存所以这里也用
-    log: Vec<Entry>, //日志条目，从1开始
-    commit_index: u64,//每个节点上已提交的最后一条日志条目索引
-    last_applied: u64,//每个节点最后应用到状态机的日志条目索引
-    //对于每个跟随者，领导者需要发送给他的下一条日志条目的索引，只有领导者需要维护
+    // the id this peer has voted for in current term
+    voted_for: Option<usize>,
+    // the logs saved in this peer, start from 1
+    log: Vec<Entry>,
+    // the latest index of the logs that this peer has committed
+    commit_index: u64,
+    // the latest index of the logs that this peer has applied to state machine
+    last_applied: u64,
+    // the index of the log that the leader should send to each follower next time,
+    // only maintained by leader
     next_index: Option<Vec<u64>>,
-    //对于每个跟随者，领导者已经复制给他的最后一条日志条目的索引，只有领导者需要维护
+    // the index of the latest log that the leader has already copied to each follower,
+    // only maintained by leader
     match_index: Option<Vec<u64>>,
     snapshot_index: u64,
     snapshot_term: u64,
@@ -158,7 +160,7 @@ impl Raft {
             state: Arc::default(),
             apply_ch,
             voted_for: None,
-            log: vec![Entry::new()],//一开始往节点里塞一个空日志
+            log: vec![Entry::new()], // push an empty log into the peer initially
             commit_index: 0,
             last_applied: 0,
             next_index: None,
@@ -195,7 +197,7 @@ impl Raft {
             snapshot_term: self.snapshot_term,
         };
         for i in 1..self.log.len() {
-            //从1开始，不保存index为0的空log
+            // do not need to save the log of index 0
             let mut dat = vec![];
             let log = self.log[i].clone();
             let _ret = labcodec::encode(&log, &mut dat).map_err(Error::Encode);
@@ -204,6 +206,7 @@ impl Raft {
         let _ret = labcodec::encode(&raft_state, &mut data).map_err(Error::Encode);
         self.persister.save_raft_state(data);
     }
+    /// save snapshot
     pub fn save_state_and_snapshot(&self, data: Vec<u8>) {
         let mut data2 = vec![];
         let mut voted_for: i64 = -1;
@@ -218,7 +221,7 @@ impl Raft {
             snapshot_term: self.snapshot_term,
         };
         for i in 1..self.log.len() {
-            //从1开始，不保存index为0的空log
+            // do not need to save the log of index 02
             let mut dat = vec![];
             let log = self.log[i].clone();
             let _ret = labcodec::encode(&log, &mut dat).map_err(Error::Encode);
@@ -261,8 +264,7 @@ impl Raft {
                 self.log[0].term = self.snapshot_term;
                 if state.voted_for == -1 {
                     self.voted_for = None;
-                }
-                else {
+                } else {
                     self.voted_for = Some(state.voted_for as usize);
                 }
 
@@ -321,21 +323,22 @@ impl Raft {
         // ```
         peer.request_vote(&args).map_err(Error::Rpc).wait()
     }
-    //测试框架中客户端会调用此函数来向节点发送日志
+    // int test.rs client will call this method to send logs to nodes
     fn start<M>(&mut self, command: &M) -> Result<(u64, u64)>
-    where
-        M: labcodec::Message,
+        where
+            M: labcodec::Message,
     {
         let index = self.snapshot_index + self.log.len() as u64;
         let term = self.get_term();
         let mut buf = vec![];
         labcodec::encode(command, &mut buf).map_err(Error::Encode)?;
         // Your code here (2B).
-        //如果是领导人，那么将这条日志添加到领导人日志条目中
+        // if this node is a leader, append the log into leader's logs
         if self.is_leader() {
             self.append_log(term, &buf);
             Ok((index, term))
-        } else {//如果不是，那么返回，因为跟随者不能从客户端接受日志
+        } else {
+            // if not, return. Because only leader can accept logs from client.
             Err(Error::NotLeader)
         }
     }
@@ -374,12 +377,10 @@ impl Raft {
             self.voted_for = Some(self.me);
             self.next_index = None;
             self.match_index = None;
-        }
-        else if self.is_leader() {
+        } else if self.is_leader() {
             self.next_index = Some(vec![self.snapshot_index + 1; self.peers.len()]);
             self.match_index = Some(vec![0; self.peers.len()]);
-        }
-        else {
+        } else {
             self.voted_for = None;
             self.match_index = None;
             self.next_index = None;
@@ -390,17 +391,16 @@ impl Raft {
         let index = index - self.snapshot_index as usize;
         if self.log.len() - 1 < index {
             None
-        }
-        else {
+        } else {
             Some(self.log[index].clone())
         }
     }
-    //在节点所有日志末尾再添加一条
+    // append a log after all the logs in the node
     pub fn append_log(&mut self, term: u64, entry: &Vec<u8>) {
         self.log.push(Entry::from_data(term, entry));
         self.persist();
     }
-    //将节点中第index条之后（不包括index本身）的日志全部删除
+    // delete all the logs after the log in index position(not include the log in index position itself)
     pub fn delete_log(&mut self, index: usize) {
         let index = index - self.snapshot_index as usize;
         if self.log.len() - 1 < index {
@@ -409,9 +409,9 @@ impl Raft {
         let _delete: Vec<Entry> = self.log.drain((index + 1)..).collect();
         self.persist();
     }
-    //将节点中第index条之前（不包括index本身）的日志全部删除
+    // delete all the logs before the log in index position(not include the log in index position itself)
     pub fn delete_prev_log(&mut self, index: usize) {
-        let index = index  - self.snapshot_index as usize;
+        let index = index - self.snapshot_index as usize;
         if self.log.len() - 1 < index {
             return;
         }
@@ -422,7 +422,7 @@ impl Raft {
         if !self.is_leader() || for_next_index < 1 {
             return;
         }
-        
+
         let mut match_index = self.match_index.clone().unwrap();
         let mut next_index = self.next_index.clone().unwrap();
         let old_match_index = match_index[id];
@@ -430,10 +430,14 @@ impl Raft {
         if for_next_index <= self.snapshot_index + self.log.len() as u64 {
             match_index[id] = for_next_index - 1;
             next_index[id] = for_next_index;
-        }
-        else {
-            my_debug!("error:leader:{} handle_append_reply id:{} for_next_index:{} log:{} ",
-                self.me, id, for_next_index, self.log.len());
+        } else {
+            my_debug!(
+                "error:leader:{} handle_append_reply id:{} for_next_index:{} log:{} ",
+                self.me,
+                id,
+                for_next_index,
+                self.log.len()
+            );
             return;
         }
         self.next_index = Some(next_index.clone());
@@ -441,10 +445,10 @@ impl Raft {
         if old_match_index == match_index[id] {
             return;
         }
-        //查看是否更新commit
+        // check whether to update commit_index
         let mut new_commit_index: u64 = 0;
         for index in ((self.commit_index + 1)..(match_index[id] + 1)).rev() {
-            //rev()逆序，从大到小开始检测
+            // check it from big to small
             let mut pass: usize = 0;
             for i in 0..self.get_peers_amount() {
                 if i == self.me {
@@ -455,7 +459,7 @@ impl Raft {
                 }
             }
             if (pass + 1) > self.get_peers_amount() / 2 {
-                //说明通过超过半数，可commit
+                // if copy numbers > half of the amount, commit
                 new_commit_index = index;
                 break;
             }
@@ -465,81 +469,51 @@ impl Raft {
             if log.term != self.get_term() {
                 return;
             }
-            //my_debug!("id:{} new_commit_index:{:?}", self.me, new_commit_index);
             self.set_commit_index(new_commit_index);
         }
     }
-    pub fn handle_fail_reply(&mut self, id: usize, fail_type: u64, for_next_index: u64, conflict_term: u64, earlist_conflict_index: u64) {
+    pub fn handle_fail_reply(
+        &mut self,
+        id: usize,
+        fail_type: u64,
+        for_next_index: u64,
+        conflict_term: u64,
+        earlist_conflict_index: u64,
+    ) {
         if !self.is_leader() {
             return;
         }
         let log_index = self.snapshot_index + self.log.len() as u64;
         let mut next_index = self.next_index.clone().unwrap();
         let mut can_find: bool = false;
-        if (for_next_index > self.snapshot_index + 1) && for_next_index <= log_index {  
-                next_index[id] = for_next_index;
-            }
-        else if fail_type == 0 {
-            for i in (self.snapshot_index as usize + 1)..(self.snapshot_index as usize + self.log.len() - 1) {
-                let entry = self.get_log(i);
-                match entry {
-                    Some(en) => {
-                        if en.term == conflict_term {
-                            next_index[id] = i as u64;
-                            can_find = true;
+        if (for_next_index > self.snapshot_index + 1) && for_next_index <= log_index {
+            next_index[id] = for_next_index;
+        } else if fail_type == 0 {
+            for i in (self.snapshot_index as usize + 1)
+                ..(self.snapshot_index as usize + self.log.len() - 1)
+                {
+                    let entry = self.get_log(i);
+                    match entry {
+                        Some(en) => {
+                            if en.term == conflict_term {
+                                next_index[id] = i as u64;
+                                can_find = true;
+                            }
                         }
-                    },
-                    None => {}
+                        None => {}
+                    }
                 }
-            }
             if can_find == false {
-                next_index[id] = earlist_conflict_index; 
+                next_index[id] = earlist_conflict_index;
             }
-        }
-        else {
+        } else {
             if next_index[id] < (MAX_SEND_ONCE + 1) {
                 next_index[id] = 1;
-            }
-            else {
+            } else {
                 next_index[id] -= MAX_SEND_ONCE;
             }
         }
         self.next_index = Some(next_index.clone());
-        // let mut next_index = self.next_index.clone().unwrap();
-        // let mut can_find: bool = false;
-        // if fail_type == 0 {
-        //     for i in (self.snapshot_index as usize + 1)..(self.snapshot_index as usize + self.log.len() - 1) {
-        //         let entry = self.get_log(i);
-        //         match entry {
-        //             Some(en) => {
-        //                 if en.term == conflict_term {
-        //                     next_index[id] = i as u64;
-        //                     can_find = true;
-        //                 }
-        //             },
-        //             None => {}
-        //         }
-        //     }
-        //     if can_find == false {
-        //         next_index[id] = earlist_conflict_index; 
-        //     }
-        // }
-        // else {
-        //     next_index[id] = for_next_index;
-        // }
-        // if (for_next_index > self.snapshot_index + 1) && for_next_index <= log_index {  
-        //     //snapshot时，follower希望的next_index有效，则可设置next_index，
-        //         next_index[id] = for_next_index;
-        //     }
-        //     else {
-        //         if next_index[id] < (MAX_SEND_ONCE + 1) {
-        //             next_index[id] = 1;
-        //         }
-        //         else {
-        //             next_index[id] -= MAX_SEND_ONCE;
-        //         }
-        //     }
-        // self.next_index = Some(next_index.clone());
     }
     pub fn set_commit_index(&mut self, new_commit_index: u64) {
         if new_commit_index < self.commit_index as u64 {
@@ -557,15 +531,18 @@ impl Raft {
             self.commit_index,
             new_commit_index
         );
-        self.commit_index = new_commit_index ;
+        self.commit_index = new_commit_index;
         if self.commit_index > self.last_applied {
-            //更新状态机
+            // update state machine
             let last = self.last_applied;
             for i in last..self.commit_index {
-                self.last_applied += 1; //并发送
+                self.last_applied += 1;
+                // send to the client
                 let mesg = ApplyMsg {
                     command_valid: true,
-                    command: self.log[(self.last_applied - self.snapshot_index) as usize].entry.clone(),
+                    command: self.log[(self.last_applied - self.snapshot_index) as usize]
+                        .entry
+                        .clone(),
                     command_index: self.last_applied,
                     is_snapshot: false,
                     data: vec![],
@@ -577,19 +554,19 @@ impl Raft {
         }
     }
     pub fn compress(&mut self, maxraftstate: usize, index: u64) {
-        if maxraftstate > self.persister.raft_state().len() {  //未超过，无需压缩日志
+        if maxraftstate > self.persister.raft_state().len() {
+            // not exceed, no need to compress
             return;
         }
         if index > self.commit_index || index <= self.snapshot_index {
             return;
         }
-        self.delete_prev_log(index as usize);  //删除index之前的日志
+        // delete the logs before index
+        self.delete_prev_log(index as usize);
         self.snapshot_index = index;
         self.snapshot_term = self.log[0].term;
-        self.persist();  
-
+        self.persist();
     }
-    
 }
 
 // Choose concurrency paradigm.
@@ -614,6 +591,7 @@ pub struct Node {
     timeout_thread: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
     timeout_reset: Arc<Mutex<Option<Sender<u64>>>>,
     append_entries_thread: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
+
 }
 
 impl Node {
@@ -636,24 +614,25 @@ impl Node {
         let node2 = node.clone();
         let thread1 = thread::spawn(move || {
             loop {
-                //设置随机超时时间
-                let rand_time = Duration::from_millis(rand::thread_rng().gen_range(TIMEOUT_LOWER_BOUND, TIMEOUT_UPPER_BOUND));
-                //如果未超时，继续
+                // set a rand timeout
+                let rand_time = Duration::from_millis(
+                    rand::thread_rng().gen_range(TIMEOUT_LOWER_BOUND, TIMEOUT_UPPER_BOUND),
+                );
+                // if time doesn't exceed, continue
                 if let Ok(_) = recv.recv_timeout(rand_time) {
-                    if *node2.shutdown.lock().unwrap() == true {  //关闭
+                    if *node2.shutdown.lock().unwrap() == true {
                         break;
                     }
                     continue;
-                }
-                else {
-                    if *node2.shutdown.lock().unwrap() == true {  //关闭
+                } else {
+                    if *node2.shutdown.lock().unwrap() == true {
                         break;
                     }
-                    //超时了但是自己是领导者，没关系
+                    // if time exceeds but itself has already become leader, conntinue
                     if node2.is_leader() {
                         continue;
                     }
-                    //不是领导者那么要开始投票请求
+                    // otherwise send request_vote
                     Node::do_vote(node2.clone());
                 }
             }
@@ -663,7 +642,7 @@ impl Node {
     }
 
     pub fn do_vote(node: Node) {
-        let mut raft = node.raft.lock().unwrap(); //锁住raft
+        let mut raft = node.raft.lock().unwrap(); // lock
         let mut current_term = raft.get_term();
         current_term += 1;
         let id = raft.me;
@@ -685,6 +664,7 @@ impl Node {
         let amount = raft.get_peers_amount();
         let passed = Arc::new(Mutex::new(1));
         let peers = raft.peers.clone();
+
         for i in 0..amount {
             if i == id {
                 continue;
@@ -695,48 +675,71 @@ impl Node {
             let term = raft.get_term().clone();
             let args2 = args.clone();
             let amount2 = amount as u64;
-            thread::spawn(move || {
-                let ret = peer.request_vote(&args2).map_err(Error::Rpc).wait();
-                match ret {
-                    Ok(t) => {
-                        let mut raft = node2.raft.lock().unwrap();
-                        if t.vote_granted {
-                            *passed.lock().unwrap() += 1;
-                            if *passed.lock().unwrap() > amount2 / 2 && term == raft.get_term() && raft.is_candidate() {
-                                raft.set_state(term, true, false);
-                                my_debug!("{} become leader!", raft.me);
-                                let node3 = node2.clone();
-                                thread::spawn(move || {
-                                    Node::do_append_thread(node3);
-                                });
-                            }
-                        } else if t.term > raft.get_term() {
-                            let _ret = node2.timeout_reset.lock().unwrap().clone().unwrap().send(1);
-                            raft.set_state(t.term, false, false);
-                        }
-                    },
-                    Err(_e) => {
-
-                    }
-                }
-            });
-            
+            peer.spawn(
+               peer.request_vote(&args2).map(move |ret| {
+                   let mut raft = node2.raft.lock().unwrap();
+                   if ret.vote_granted {
+                       *passed.lock().unwrap() += 1;
+                       if *passed.lock().unwrap() > amount2 / 2
+                           && term == raft.get_term()
+                           && raft.is_candidate()
+                       {
+                           raft.set_state(term, true, false);
+                           my_debug!("{} become leader!", raft.me);
+                           let node3 = node2.clone();
+                           thread::spawn(move || {
+                               Node::do_append_thread(node3);
+                           });
+                       }
+                   } else if ret.term > raft.get_term() {
+                       let _ret = node2.timeout_reset.lock().unwrap().clone().unwrap().send(1);
+                       raft.set_state(ret.term, false, false);
+                   }
+               }).map_err(|_|{})
+            );
+//            thread::spawn(move || {
+//                let ret = peer.request_vote(&args2).map_err(Error::Rpc).wait();
+//                match ret {
+//                    Ok(t) => {
+//                        let mut raft = node2.raft.lock().unwrap();
+//                        if t.vote_granted {
+//                            *passed.lock().unwrap() += 1;
+//                            if *passed.lock().unwrap() > amount2 / 2
+//                                && term == raft.get_term()
+//                                && raft.is_candidate()
+//                            {
+//                                raft.set_state(term, true, false);
+//                                my_debug!("{} become leader!", raft.me);
+//                                let node3 = node2.clone();
+//                                thread::spawn(move || {
+//                                    Node::do_append_thread(node3);
+//                                });
+//                            }
+//                        } else if t.term > raft.get_term() {
+//                            let _ret = node2.timeout_reset.lock().unwrap().clone().unwrap().send(1);
+//                            raft.set_state(t.term, false, false);
+//                        }
+//                    }
+//                    Err(e) => {
+//                        my_debug!("send requests vote error: {:?}", e);
+//                    }
+//                }
+//            });
         }
     }
 
     pub fn do_append_thread(node: Node) {
         let node2 = node.clone();
-        let thread1 = thread::spawn(move || {
-            loop {
-                let interval = Duration::from_millis(APPEND_ENTRIES_INTERVAL);
-                thread::sleep(interval);
-                if *node2.shutdown.lock().unwrap() == true {  //关闭
-                    break;
-                }
-                if node2.is_leader() {
-                    Node::do_append_entries(node2.clone());
-                }
-                else {continue;}
+        let thread1 = thread::spawn(move || loop {
+            let interval = Duration::from_millis(APPEND_ENTRIES_INTERVAL);
+            thread::sleep(interval);
+            if *node2.shutdown.lock().unwrap() == true {
+                break;
+            }
+            if node2.is_leader() {
+                Node::do_append_entries(node2.clone());
+            } else {
+                continue;
             }
         });
         *node.append_entries_thread.lock().unwrap() = Some(thread1);
@@ -761,8 +764,9 @@ impl Node {
             let peer = raft.peers[i].clone();
             let node2 = node.clone();
             let prev_log_index2 = next_index[i] - 1;
-            if prev_log_index2 < raft.snapshot_index {//给太落后的跟随者发送快照
-                //简化了，只发送一次快照
+            if prev_log_index2 < raft.snapshot_index {
+                // send snapshot to followers which are too late in term
+                // simplified, only send once
                 let args = RequestSnapshotArgs {
                     term: raft.get_term(),
                     leader_id: id as u64,
@@ -770,40 +774,59 @@ impl Node {
                     last_included_term: raft.snapshot_term,
                     data: raft.persister.snapshot(),
                 };
-                thread::spawn(move || {
-                    let ret = peer.install_snapshot(&args).map_err(Error::Rpc).wait();
-                    match ret {
-                        Ok(o) => {
-                            let mut raft = node2.raft.lock().unwrap();
-                            if o.term > raft.get_term() {
-                                let _ret = node2.timeout_reset.lock().unwrap().clone().unwrap().send(1);
-                                raft.set_state(o.term, false, false);
-                            }
-                            if raft.is_leader() {
-                                let mut next_index = raft.next_index.clone().unwrap();
-                                let mut match_index = raft.match_index.clone().unwrap();
-                                next_index[i] = args.last_included_index + 1;
-                                match_index[i] = args.last_included_index;
-                                raft.next_index = Some(next_index.clone());
-                                raft.match_index = Some(match_index.clone());
-                            }
-                        },
-                        Err(_e) => {}
-                    }
-                });
-            }
-            else {
+                peer.spawn(
+                    peer.install_snapshot(&args).map(move |ret| {
+                        let mut raft = node2.raft.lock().unwrap();
+                        if ret.term > raft.get_term() {
+                            let _ret =
+                                node2.timeout_reset.lock().unwrap().clone().unwrap().send(1);
+                            raft.set_state(ret.term, false, false);
+                        }
+                        if raft.is_leader() {
+                            let mut next_index = raft.next_index.clone().unwrap();
+                            let mut match_index = raft.match_index.clone().unwrap();
+                            next_index[i] = args.last_included_index + 1;
+                            match_index[i] = args.last_included_index;
+                            raft.next_index = Some(next_index.clone());
+                            raft.match_index = Some(match_index.clone());
+                        }
+                    }).map_err(|_|{})
+                );
+//                thread::spawn(move || {
+//                    let ret = peer.install_snapshot(&args).map_err(Error::Rpc).wait();
+//                    match ret {
+//                        Ok(o) => {
+//                            let mut raft = node2.raft.lock().unwrap();
+//                            if o.term > raft.get_term() {
+//                                let _ret =
+//                                    node2.timeout_reset.lock().unwrap().clone().unwrap().send(1);
+//                                raft.set_state(o.term, false, false);
+//                            }
+//                            if raft.is_leader() {
+//                                let mut next_index = raft.next_index.clone().unwrap();
+//                                let mut match_index = raft.match_index.clone().unwrap();
+//                                next_index[i] = args.last_included_index + 1;
+//                                match_index[i] = args.last_included_index;
+//                                raft.next_index = Some(next_index.clone());
+//                                raft.match_index = Some(match_index.clone());
+//                            }
+//                        }
+//                        Err(_e) => {}
+//                    }
+//                });
+            } else {
                 let mut args = RequestEntryArgs {
                     term: raft.get_term(),
                     leader_id: id as u64,
                     prev_log_index: prev_log_index2,
                     prev_log_term: 0,
                     entries: vec![],
-                    leader_commit: raft.commit_index
+                    leader_commit: raft.commit_index,
                 };
-                let entry = raft.get_log(args.prev_log_index as usize); //获取log
+                let entry = raft.get_log(args.prev_log_index as usize);
                 args.prev_log_term = entry.unwrap().term;
-                for j in 0..MAX_SEND_ONCE {  //一次发送至多MAX_SEND_ONCE个log
+                for j in 0..MAX_SEND_ONCE {
+                    // send MAX_SEND_ONCE logs at most once
                     let entry_next = raft.get_log((next_index[i] + j) as usize);
                     match entry_next {
                         Some(en) => {
@@ -816,37 +839,75 @@ impl Node {
                         }
                     }
                 }
-                thread::spawn(move || {
-                    my_debug!("leader:{} do heart beat:{} args:[term:{} prev_index:{} prev_term:{} commit:{} entry_num:{}] ", 
-                    id, i, args.term, args.prev_log_index, args.prev_log_term, args.leader_commit, args.entries.len());
-                    let ret = peer.append_entries(&args).map_err(Error::Rpc).wait();
-                    match ret {
-                        Ok(t) => {
-                            let mut raft = node2.raft.lock().unwrap();
-                            if t.success {
-                                if t.term == raft.get_term() {
-                                    raft.handle_success_reply(i, t.next_index);
-                                }
-                                
+                peer.spawn(
+                    peer.append_entries(&args).map(move |ret| {
+                        let mut raft = node2.raft.lock().unwrap();
+                        if ret.success {
+                            if ret.term == raft.get_term() {
+                                raft.handle_success_reply(i, ret.next_index);
                             }
-                            else {
-                                if t.term > raft.get_term() {
-                                    let _ret = node2.timeout_reset.lock().unwrap().clone().unwrap().send(1);
-                                    raft.set_state(t.term, false, false);
-                                    my_debug!("leader {} become follower because it meets a bigger term {} from {}", id, t.term, i);
-                                    
-                                }
-                                else {
-                                    if t.term == raft.get_term() {
-                                        raft.handle_fail_reply(i, t.fail_type, t.next_index, t.conflict_term, t.earlist_conflict_index);
-                                    }
-                                    
+                        } else {
+                            if ret.term > raft.get_term() {
+                                let _ret = node2
+                                    .timeout_reset
+                                    .lock()
+                                    .unwrap()
+                                    .clone()
+                                    .unwrap()
+                                    .send(1);
+                                raft.set_state(ret.term, false, false);
+                            } else {
+                                if ret.term == raft.get_term() {
+                                    raft.handle_fail_reply(
+                                        i,
+                                        ret.fail_type,
+                                        ret.next_index,
+                                        ret.conflict_term,
+                                        ret.earlist_conflict_index,
+                                    );
                                 }
                             }
-                        },
-                        Err(_e) => {},
-                    }
-                });
+                        }
+                    }).map_err(|_|{})
+                );
+//                thread::spawn(move || {
+//                    my_debug!("leader:{} do heart beat:{} args:[term:{} prev_index:{} prev_term:{} commit:{} entry_num:{}] ",
+//                    id, i, args.term, args.prev_log_index, args.prev_log_term, args.leader_commit, args.entries.len());
+//                    let ret = peer.append_entries(&args).map_err(Error::Rpc).wait();
+//                    match ret {
+//                        Ok(t) => {
+//                            let mut raft = node2.raft.lock().unwrap();
+//                            if t.success {
+//                                if t.term == raft.get_term() {
+//                                    raft.handle_success_reply(i, t.next_index);
+//                                }
+//                            } else {
+//                                if t.term > raft.get_term() {
+//                                    let _ret = node2
+//                                        .timeout_reset
+//                                        .lock()
+//                                        .unwrap()
+//                                        .clone()
+//                                        .unwrap()
+//                                        .send(1);
+//                                    raft.set_state(t.term, false, false);
+//                                    my_debug!("leader {} become follower because it meets a bigger term {} from {}", id, t.term, i);
+//                                } else {
+//                                    if t.term == raft.get_term() {
+//                                        raft.handle_fail_reply(
+//                                            i,
+//                                            t.fail_type,
+//                                            t.next_index,
+//                                            t.conflict_term,
+//                                            t.earlist_conflict_index,
+//                                        );
+//                                    }
+//                                }
+//                            }
+//                        }
+//                        Err(_e) => {}
+//                    }
+//                });
             }
         }
     }
@@ -863,16 +924,15 @@ impl Node {
     ///
     /// This method must return without blocking on the raft.
     pub fn start<M>(&self, command: &M) -> Result<(u64, u64)>
-    where
-        M: labcodec::Message,
+        where
+            M: labcodec::Message,
     {
         // Your code here.
         // Example:
         // self.raft.start(command)
         if self.is_leader() {
             self.raft.lock().unwrap().start(command)
-        }
-        else {
+        } else {
             Err(Error::NotLeader)
         }
     }
@@ -901,7 +961,7 @@ impl Node {
         State {
             term: self.term(),
             is_leader: self.is_leader(),
-            is_candidate: self.is_candidate()
+            is_candidate: self.is_candidate(),
         }
     }
     pub fn save_snapshot(&self, data: Vec<u8>) {
@@ -921,11 +981,11 @@ impl Node {
     pub fn kill(&self) {
         // Your code here, if desired.
         *self.shutdown.lock().unwrap() = true;
-        
+
         match *self.timeout_reset.lock().unwrap() {
             Some(ref send) => {
                 let _ret = send.send(1);
-            },
+            }
             None => {}
         }
         let timeout_thread = self.timeout_thread.lock().unwrap().take();
@@ -957,13 +1017,14 @@ impl RaftService for Node {
             raft.set_state(args.term, false, false);
         }
         match raft.voted_for {
-            Some(_) => {},
+            Some(_) => {}
             None => {
                 let last_log_index = raft.get_last_log_index() as u64;
                 let last_log_term = raft.get_last_log_term();
-                //选举限制
-                if (last_log_term == args.last_log_term && last_log_index <= args.last_log_index) ||
-                last_log_term < args.last_log_term {
+                // election limit
+                if (last_log_term == args.last_log_term && last_log_index <= args.last_log_index)
+                    || last_log_term < args.last_log_term
+                {
                     reply.vote_granted = true;
                     raft.voted_for = Some(args.candidate_id as usize);
                     raft.persist();
@@ -975,7 +1036,13 @@ impl RaftService for Node {
     }
     fn append_entries(&self, args: RequestEntryArgs) -> RpcFuture<RequestEntryReply> {
         let mut raft = self.raft.lock().unwrap();
-        my_debug!("node {} receive the entry from leader {}, node.term: {}, args.term: {}", raft.me, args.leader_id, raft.get_term(), args.term);
+        my_debug!(
+            "node {} receive the entry from leader {}, node.term: {}, args.term: {}",
+            raft.me,
+            args.leader_id,
+            raft.get_term(),
+            args.term
+        );
         let mut reply = RequestEntryReply {
             term: raft.get_term(),
             success: false,
@@ -985,33 +1052,37 @@ impl RaftService for Node {
             fail_type: 0,
         };
         if args.term < raft.get_term() {
-            return Box::new(futures::future::result(Ok(reply)));//任期错误时，返回目标任期，以告知领导者修改错误
+            return Box::new(futures::future::result(Ok(reply))); // when term is wrong, return the bigger term so that the leader can revise its term
         }
         let _ret = self.timeout_reset.lock().unwrap().clone().unwrap().send(1);
         raft.set_state(args.term, false, false);
         raft.voted_for = Some(args.leader_id as usize);
         raft.persist();
-        reply.term = args.term;//返回自己的任期
+        reply.term = args.term; // if term is right, return its own term
         if args.prev_log_index < raft.snapshot_index {
             return Box::new(futures::future::result(Ok(reply)));
         }
         let entry = raft.get_log(args.prev_log_index as usize);
         match entry {
             Some(en) => {
-                if en.term == args.prev_log_term {//日志匹配
+                if en.term == args.prev_log_term {
+                    // check if the log is matched
                     if args.entries.len() != 0 {
                         for i in 0..args.entries.len() {
                             let log_encode = args.entries[i].clone();
                             match labcodec::decode(&log_encode) {
                                 Ok(log) => {
                                     let log: Entry = log;
-                                    let node_entry = raft.get_log(args.prev_log_index as usize + 1 + i);
-                                    //一致性检查
+                                    let node_entry =
+                                        raft.get_log(args.prev_log_index as usize + 1 + i);
+                                    // consistency check
                                     match node_entry {
                                         Some(n_en) => {
-                                            if n_en == log {  //log 相等，无需删除
+                                            if n_en == log {
+                                                // if their logs are the same, do not need to delete
                                                 continue;
-                                            } else {//不相等时，把跟随者冲突的日志条目全部删除并且加上领导人的日志
+                                            } else {
+                                                // else, delete those logs of follower after the conflict log and append leader's logs
                                                 raft.delete_log(args.prev_log_index as usize + i);
                                                 raft.append_log(log.term, &log.entry);
                                             }
@@ -1037,38 +1108,26 @@ impl RaftService for Node {
                     }
                     let _ret = self.timeout_reset.lock().unwrap().clone().unwrap().send(1);
                 }
-                //日志不匹配时，找到跟随者冲突任期中最早的那条日志的索引
+                // when the log is not matched, find the eraliest log in the conflict term
                 else {
                     reply.conflict_term = en.term;
-                    for i in (raft.snapshot_index + raft.log.len() as u64 - 1)..(raft.snapshot_index + 1) {
-                        let entry = raft.get_log(i as usize);
-                        match entry {
-                            Some(en) => {
-                                if en.term == reply.conflict_term {
-                                    reply.earlist_conflict_index = i;
+                    for i in
+                        (raft.snapshot_index + raft.log.len() as u64 - 1)..(raft.snapshot_index + 1)
+                        {
+                            let entry = raft.get_log(i as usize);
+                            match entry {
+                                Some(en) => {
+                                    if en.term == reply.conflict_term {
+                                        reply.earlist_conflict_index = i;
+                                    }
                                 }
-                            },
-                            None => {},
+                                None => {}
+                            }
                         }
-                    }
                     return Box::new(futures::future::result(Ok(reply)));
                 }
             }
             None => {
-                // reply.conflict_term = raft.get_last_log_term();
-                // for i in (raft.log.len() - 1)..0 {
-                //     let entry = raft.get_log(i);
-                //     match entry {
-                //         Some(en) => {
-                //             if en.term == reply.conflict_term {
-                //                 reply.earlist_conflict_index = i as u64;
-                //             }
-                //         },
-                //         None => {},
-                //     }
-                // }
-                // reply.next_index = raft.snapshot_index + 
-                // raft.log.len() as u64;
                 reply.fail_type = 1;
                 return Box::new(futures::future::result(Ok(reply)));
             }
@@ -1085,38 +1144,43 @@ impl RaftService for Node {
             return Box::new(futures::future::result(Ok(reply)));
         }
         if args.last_included_index <= raft.snapshot_index {
-		    my_debug!("warn:me[{}:{}] recv snapshot [{}:{}]", raft.me, raft.snapshot_index, args.leader_id, args.last_included_index);
-		    return Box::new(futures::future::result(Ok(reply)));
-	    }
+            my_debug!(
+                "warn:me[{}:{}] recv snapshot [{}:{}]",
+                raft.me,
+                raft.snapshot_index,
+                args.leader_id,
+                args.last_included_index
+            );
+            return Box::new(futures::future::result(Ok(reply)));
+        }
         let _ret = self.timeout_reset.lock().unwrap().clone().unwrap().send(1);
-        if args.term == raft.get_term() && raft.is_candidate() {  //candidate遇到leader
+        if args.term == raft.get_term() && raft.is_candidate() {
             raft.set_state(args.term, false, false);
             raft.voted_for = Some(args.leader_id as usize);
             raft.persist();
         }
-        if args.term > raft.get_term() {  //遇到term更大，变成follower，无论是candidate还是leader，都变为follower
+        if args.term > raft.get_term() {
             raft.set_state(args.term, false, false);
             raft.voted_for = Some(args.leader_id as usize);
             raft.persist();
         }
         reply.term = raft.get_term();
-        
-        if args.last_included_index > (raft.snapshot_index + raft.log.len() as u64 - 1) { //所有log都要替换
+
+        if args.last_included_index > (raft.snapshot_index + raft.log.len() as u64 - 1) {
             let log = Entry {
                 term: args.last_included_term,
                 entry: vec![],
             };
             raft.log = vec![log];
-        }
-        else {
-            raft.delete_prev_log(args.last_included_index as usize, );
+        } else {
+            raft.delete_prev_log(args.last_included_index as usize);
         }
         raft.snapshot_index = args.last_included_index;
         raft.snapshot_term = args.last_included_term;
         raft.commit_index = args.last_included_index;
         raft.last_applied = args.last_included_index;
 
-        raft.save_state_and_snapshot(args.data.clone());  //保存state和snapshot
+        raft.save_state_and_snapshot(args.data.clone());
 
         let mesg = ApplyMsg {
             command_valid: true,
@@ -1125,7 +1189,7 @@ impl RaftService for Node {
             is_snapshot: true,
             data: args.data.clone(),
         };
-        let _ret = raft.apply_ch.unbounded_send(mesg);  //发送snapshot给kv_server
+        let _ret = raft.apply_ch.unbounded_send(mesg);
 
         Box::new(futures::future::result(Ok(reply)))
     }

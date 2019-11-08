@@ -55,7 +55,7 @@ pub struct RequestEntryArgs {
     pub prev_log_term: u64,
 
     #[prost(bytes, repeated, tag = "5")]
-    pub entries: Vec<Vec<u8>>, //发送LogEntry，一次Vec<Vec>发送多个
+    pub entries: Vec<Vec<u8>>, // send multiple logs once
 
     #[prost(uint64, tag = "6")]
     pub leader_commit: u64,
@@ -98,7 +98,6 @@ pub struct RequestSnapshotArgs {
 
     #[prost(bytes, tag = "5")]
     pub data: Vec<u8>,
-
 }
 #[derive(Clone, PartialEq, Message)]
 pub struct RequestSnapshotReply {

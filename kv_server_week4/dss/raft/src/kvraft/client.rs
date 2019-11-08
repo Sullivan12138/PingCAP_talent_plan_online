@@ -1,15 +1,15 @@
+use futures::Future;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use futures::Future;
 
 use super::service;
 #[macro_export]
 macro_rules! my_debug2 {
-    ($($arg: tt)*) => (
-        println!("Debug[{}:{}]: {}", file!(), line!(),format_args!($($arg)*));
-    )
+    ($($arg: tt)*) => {
+        // println!("Debug[{}:{}]: {}", file!(), line!(),format_args!($($arg)*));
+    };
 }
 const NEXT_RAFT_INTERVAL: u64 = 110;
 const NEXT_LEADER_INTERVAL: u64 = 50;
@@ -23,7 +23,7 @@ pub struct Clerk {
     pub name: String,
     servers: Vec<service::KvClient>,
     // You will have to modify this struct.
-    seq: Arc<Mutex<u64>>,//请求的序列号
+    seq: Arc<Mutex<u64>>, // the sequence number of request
     leader_id: Arc<Mutex<u64>>,
 }
 
@@ -36,8 +36,8 @@ impl fmt::Debug for Clerk {
 impl Clerk {
     pub fn new(name: String, servers: Vec<service::KvClient>) -> Clerk {
         // You'll have to add code here.
-        let clerk = Clerk { 
-            name: name.clone(), 
+        let clerk = Clerk {
+            name: name.clone(),
             servers,
             seq: Arc::new(Mutex::new(0)),
             leader_id: Arc::new(Mutex::new(0)),
@@ -65,7 +65,12 @@ impl Clerk {
             name: self.name.clone(),
         };
         let mut i = *self.leader_id.lock().unwrap() as usize;
-        my_debug2!("client {} get request, key: {}, seq: {}", self.name, key.clone(), self.seq.lock().unwrap());
+        my_debug2!(
+            "client {} get request, key: {}, seq: {}",
+            self.name,
+            key.clone(),
+            self.seq.lock().unwrap()
+        );
         loop {
             let reply = self.servers[i].get(&args).wait();
             match reply {
@@ -75,24 +80,22 @@ impl Clerk {
                             *self.leader_id.lock().unwrap() = i as u64;
                             my_debug2!("success reply! leader_id: {}, value: {}", i, t.value);
                         }
-                        
+
                         return t.value;
-                    }
-                    else {
+                    } else {
                         if !t.wrong_leader {
                             *self.leader_id.lock().unwrap() = i as u64;
                             thread::sleep(Duration::from_millis(NEXT_RAFT_INTERVAL));
-                        }
-                        else {
+                        } else {
                             i = (i + 1) % self.servers.len();
                             thread::sleep(Duration::from_millis(NEXT_LEADER_INTERVAL));
                         }
                     }
-                },
+                }
                 Err(_e) => {
                     i = (i + 1) % self.servers.len();
                     thread::sleep(Duration::from_millis(NEXT_LEADER_INTERVAL));
-                },
+                }
             }
         }
     }
@@ -111,12 +114,12 @@ impl Clerk {
                 key = k;
                 value = v;
                 op_type = service::Op::Put;
-            },
+            }
             Op::Append(k, v) => {
                 key = k;
                 value = v;
                 op_type = service::Op::Append;
-            },
+            }
         }
         let args = service::PutAppendRequest {
             key,
@@ -126,7 +129,13 @@ impl Clerk {
             name: self.name.clone(),
         };
         if args.op == 1 {
-            my_debug2!("client {} put, key: {}, value: {}, seq: {}", args.name, args.key, args.value, args.seq);
+            my_debug2!(
+                "client {} put, key: {}, value: {}, seq: {}",
+                args.name,
+                args.key,
+                args.value,
+                args.seq
+            );
         }
         let mut i = *self.leader_id.lock().unwrap() as usize;
         loop {
@@ -138,18 +147,16 @@ impl Clerk {
                             *self.leader_id.lock().unwrap() = i as u64;
                         }
                         return;
-                    }
-                    else {
+                    } else {
                         if !t.wrong_leader {
                             *self.leader_id.lock().unwrap() = i as u64;
                             thread::sleep(Duration::from_millis(NEXT_RAFT_INTERVAL));
-                        }
-                        else {
+                        } else {
                             i = (i + 1) % self.servers.len();
                             thread::sleep(Duration::from_millis(NEXT_LEADER_INTERVAL));
                         }
                     }
-                },
+                }
                 Err(_e) => {
                     i = (i + 1) % self.servers.len();
                     thread::sleep(Duration::from_millis(NEXT_LEADER_INTERVAL));

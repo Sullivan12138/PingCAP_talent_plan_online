@@ -1,5 +1,5 @@
 [package]
-name = "kv_server_week1"
+name = "kv_server_week2"
 version = "0.1.0"
 authors = ["taowei <2909683353@qq.com>"]
 edition = "2018"
@@ -8,15 +8,9 @@ build = "build.rs"
 [lib]
 name = "lib"
 path = "src/lib.rs"
+test = true
+bench = false
 
-
-[[bin]]
-name = "server"
-path = "src/server.rs"
-
-[[bin]]
-name = "client"
-path = "src/client.rs"
 
 [dependencies]
 protobuf = "~2"

@@ -1,6 +1,7 @@
 use chrono::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Deserializer;
+use std::fs;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io;
@@ -39,7 +40,7 @@ impl Log {
     }
     /// write the log into file
     pub fn write_log(&self) -> io::Result<()> {
-        // test if writing log will block main net's IO
+        // tests if writing log will block main net's IO
         // thread::sleep(Duration::from_secs(5));
         let dt = Local::now();
         let time_stamp = dt.timestamp();
@@ -55,7 +56,7 @@ impl Log {
     }
     /// read logs from file
     pub fn read_log(file: File) -> Vec<Log> {
-        // test if reading log will block main net's IO
+        // tests if reading log will block main net's IO
         // thread::sleep(Duration::from_secs(5));
         let mut reader = BufReader::new(file);
         let mut stream = Deserializer::from_reader(reader).into_iter::<Log>();

@@ -1,6 +1,5 @@
-extern crate grpcio;
-extern crate lib;
-
+use crate::protos;
+use crate::database;
 use std::io::Read;
 use std::sync::Arc;
 use std::{io, thread};
@@ -9,16 +8,16 @@ use futures::sync::oneshot;
 use futures::Future;
 use grpcio::{Environment, RpcContext, ServerBuilder, UnarySink};
 
-use lib::protos::kvserver::{
+use protos::kvserver::{
     DeleteRequest, DeleteResponse, GetRequest, GetResponse, PutRequest, PutResponse,
     ResponseStatus, ScanRequest, ScanResponse,
 };
-use lib::protos::kvserver_grpc::{self, Kvdb};
+use protos::kvserver_grpc::{self, Kvdb};
 
-use lib::database::storage::Database;
+use database::storage::Database;
 
 #[derive(Clone)]
-struct DbService {
+pub struct DbService {
     db: Database,
 }
 

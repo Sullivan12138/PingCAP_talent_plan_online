@@ -1,27 +1,26 @@
 use super::service::*;
 use crate::raft;
 
-
-use labrpc::RpcFuture;
-use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
-use std::thread;
-use futures::Async;
 use futures::stream::Stream;
 use futures::sync::mpsc::{unbounded, UnboundedReceiver};
+use futures::Async;
+use labrpc::RpcFuture;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::thread;
 #[macro_export]
 macro_rules! my_debug3 {
-    ($($arg: tt)*) => (
-        println!("Debug[{}:{}]: {}", file!(), line!(),format_args!($($arg)*));
-    )
+    ($($arg: tt)*) => {
+        // println!("Debug[{}:{}]: {}", file!(), line!(),format_args!($($arg)*));
+    };
 }
 #[derive(Clone, PartialEq, Message)]
 pub struct Reply {
     #[prost(uint64, tag = "1")]
-    pub seq: u64,      //请求序列号
+    pub seq: u64, // the sequence number of request
 
     #[prost(string, tag = "2")]
-    pub value: String, //get操作时的结果
+    pub value: String, // the result of get
 }
 
 impl Reply {
@@ -33,36 +32,37 @@ impl Reply {
     }
 }
 #[derive(Clone, PartialEq, Message)]
-pub struct OpEntry { //日志结构
+pub struct OpEntry {
+    // log structure
     #[prost(uint64, tag = "1")]
-    pub seq: u64, //操作的序列号
+    pub seq: u64, // sequence number
     #[prost(string, tag = "2")]
-    pub name: String, //客户端名称
+    pub name: String, // name of client
     #[prost(uint64, tag = "3")]
-    pub op: u64, //操作类型，0代表get，1代表put，2代表append
+    pub op: u64, // operation type, 0 for get, 1 for put, 2 for append
     #[prost(string, tag = "4")]
-    pub key: String, 
+    pub key: String,
     #[prost(string, tag = "5")]
-    pub value: String, 
+    pub value: String,
 }
 
 #[derive(Clone, PartialEq, Message)]
-pub struct Snapshot {  //保存快照结构
+pub struct Snapshot {
+    // save snapshot structure
     #[prost(uint64, tag = "1")]
     pub snapshot_index: u64,
-    //将HashMap的键和值分别存储，
+    // save hashmap's key and value respectively
     #[prost(bytes, repeated, tag = "2")]
-    pub key: Vec<Vec<u8>>,  
+    pub key: Vec<Vec<u8>>,
 
     #[prost(bytes, repeated, tag = "3")]
-    pub value: Vec<Vec<u8>>,  
+    pub value: Vec<Vec<u8>>,
 
     #[prost(bytes, repeated, tag = "4")]
     pub requests_key: Vec<Vec<u8>>,
 
     #[prost(bytes, repeated, tag = "5")]
     pub requests_value: Vec<Vec<u8>>,
-
 }
 
 pub struct KvServer {
@@ -72,8 +72,8 @@ pub struct KvServer {
     maxraftstate: Option<usize>,
     // Your definitions here.
     pub apply_ch: UnboundedReceiver<raft::ApplyMsg>,
-    pub database: HashMap<String, String>,                   //数据库,使用HashMap数据结构存储
-    pub requests: HashMap<String, Reply>, //对应客户端的每一次请求,用于检测重复的请求,键为客户端名，值为操作序列号
+    pub database: HashMap<String, String>, // database, stored in hashmap
+    pub requests: HashMap<String, Reply>,  // each request of client
     pub snapshot_index: u64,
 }
 
@@ -88,7 +88,6 @@ impl KvServer {
         let snapshot = persister.snapshot();
         let (tx, apply_ch) = unbounded();
         let rf = raft::Raft::new(servers, me, persister, tx);
-        
 
         let mut kv_server = KvServer {
             rf: raft::Node::new(rf),
@@ -132,12 +131,11 @@ impl KvServer {
         }
         let _ret = labcodec::encode(&snapshot, &mut data);
         data
-    } 
+    }
     pub fn load_snapshot(&mut self, data: Vec<u8>) {
         if data.is_empty() {
             return;
-        }
-        else {
+        } else {
             match labcodec::decode(&data) {
                 Ok(o) => {
                     let snapshot: Snapshot = o;
@@ -151,16 +149,15 @@ impl KvServer {
                             Ok(o) => {
                                 let k: String = o;
                                 key = k;
-                                
-                            },
-                            Err(_e) => {},
+                            }
+                            Err(_e) => {}
                         }
                         match labcodec::decode(&snapshot.value[i]) {
                             Ok(o) => {
                                 let v: String = o;
                                 value = v;
-                            },
-                            Err(_e) => {},
+                            }
+                            Err(_e) => {}
                         }
                         self.database.insert(key.clone(), value.clone());
                     }
@@ -169,20 +166,20 @@ impl KvServer {
                             Ok(o) => {
                                 let k: String = o;
                                 key = k;
-                            },
-                            Err(_e) => {},
+                            }
+                            Err(_e) => {}
                         }
                         match labcodec::decode(&snapshot.requests_value[i]) {
                             Ok(o) => {
                                 let v: Reply = o;
                                 value2 = v;
-                            },
-                            Err(_e) => {},
+                            }
+                            Err(_e) => {}
                         }
                         self.requests.insert(key.clone(), value2.clone());
                     }
-                },
-                Err(_e) => {},
+                }
+                Err(_e) => {}
             }
         }
     }
@@ -197,8 +194,10 @@ impl KvServer {
                     return true;
                 }
                 return false;
-            },
-            None => {return false;},
+            }
+            None => {
+                return false;
+            }
         }
     }
 }
@@ -243,13 +242,13 @@ impl Node {
                 if *node2.shutdown.lock().unwrap() == true {
                     break;
                 }
-                //服务器端需要对apply信号进行处理,但是又不能一直占着锁去轮循,但是又要
-                //一接收到信号就对其进行处理,所以需要异步处理
+                // deal with the request asynchronously
                 if let Ok(Async::Ready(Some(apply_msg))) =
                 futures::executor::spawn(futures::lazy(|| {
                     node2.server.lock().unwrap().apply_ch.poll()
                 }))
-                .wait_future() {
+                    .wait_future()
+                {
                     if !apply_msg.command_valid {
                         continue;
                     }
@@ -260,55 +259,85 @@ impl Node {
                         }
                         continue;
                     }
-                    if apply_msg.command.is_empty() || apply_msg.command_index <= server.snapshot_index {
-                        continue;   
+                    if apply_msg.command.is_empty()
+                        || apply_msg.command_index <= server.snapshot_index
+                    {
+                        continue;
                     }
                     let entry: OpEntry;
                     match labcodec::decode(&apply_msg.command) {
                         Ok(o) => {
                             entry = o;
-                        },
-                        Err(_e) => {continue;}
+                        }
+                        Err(_e) => {
+                            continue;
+                        }
                     }
-                    //忽略以前发过来的请求
-                    if server.requests.get(&entry.name).is_none() 
-                    || server.requests.get(&entry.name).unwrap().seq < entry.seq {
+                    // overlook the request that has been sent before
+                    if server.requests.get(&entry.name).is_none()
+                        || server.requests.get(&entry.name).unwrap().seq < entry.seq
+                    {
                         let mut reply = Reply {
                             seq: entry.seq,
                             value: String::new(),
                         };
-                        my_debug3!("apply_msg op:{}, key:{}, value:{}", entry.op, entry.key, entry.value);
+                        my_debug3!(
+                            "apply_msg op:{}, key:{}, value:{}",
+                            entry.op,
+                            entry.key,
+                            entry.value
+                        );
                         match entry.op {
                             0 => {
                                 let ret = server.database.get(&entry.key);
                                 match ret {
                                     Some(v) => {
                                         reply.value = v.to_string();
-                                        my_debug3!("successfully get! key: {}, value: {}", entry.key, v);
-                                    },
-                                    None => {},
+                                        my_debug3!(
+                                            "successfully get! key: {}, value: {}",
+                                            entry.key,
+                                            v
+                                        );
+                                    }
+                                    None => {}
                                 }
                                 server.requests.insert(entry.name.clone(), reply.clone());
-                            },
+                            }
                             1 => {
-                                server.database.insert(entry.key.clone(), entry.value.clone());
+                                server
+                                    .database
+                                    .insert(entry.key.clone(), entry.value.clone());
                                 server.requests.insert(entry.name.clone(), reply.clone());
-                                my_debug3!("successfully put, after that the value of key {} is {}", entry.key, server.database.get(&entry.key).unwrap());
-                            },
+                                my_debug3!(
+                                    "successfully put, after that the value of key {} is {}",
+                                    entry.key,
+                                    server.database.get(&entry.key).unwrap()
+                                );
+                            }
                             2 => {
                                 let ret = server.database.get(&entry.key);
                                 match ret {
                                     Some(v) => {
-                                        server.database.get_mut(&entry.key).unwrap().push_str(&entry.value.clone());
-                                    },
+                                        server
+                                            .database
+                                            .get_mut(&entry.key)
+                                            .unwrap()
+                                            .push_str(&entry.value.clone());
+                                    }
                                     None => {
-                                        server.database.insert(entry.key.clone(), entry.value.clone());
-                                    },
+                                        server
+                                            .database
+                                            .insert(entry.key.clone(), entry.value.clone());
+                                    }
                                 }
-                                my_debug3!("successfully append, after that the value of key {} is {}", entry.key, server.database.get(&entry.key).unwrap());
+                                my_debug3!(
+                                    "successfully append, after that the value of key {} is {}",
+                                    entry.key,
+                                    server.database.get(&entry.key).unwrap()
+                                );
                                 server.requests.insert(entry.name.clone(), reply.clone());
-                            },
-                            _ => {},
+                            }
+                            _ => {}
                         }
                     }
                     server.snapshot_index = apply_msg.command_index;
@@ -360,7 +389,7 @@ impl KvService for Node {
     fn get(&self, arg: GetRequest) -> RpcFuture<GetReply> {
         // Your code here.
         my_debug3!("server:{} get:{:?}", self.get_id(), arg);
-        
+
         let mut reply = GetReply {
             wrong_leader: true,
             err: String::new(),
@@ -369,7 +398,8 @@ impl KvService for Node {
         if !self.is_leader() {
             return Box::new(futures::future::result(Ok(reply)));
         }
-        //将server上锁，不在一开始上锁的原因是is_leader()也会请求锁，如果一开始就上锁会导致死锁
+        // lock server, we cannot lock it at the beginning, because is_leader()
+        // will also ask for a lock
         let server = self.server.lock().unwrap();
         let ret = server.requests.get(&arg.name);
         match ret {
@@ -378,15 +408,12 @@ impl KvService for Node {
                     reply.wrong_leader = true;
                     reply.err = String::from("");
                     return Box::new(futures::future::result(Ok(reply)));
-                }
-                else if arg.seq == re.seq {
+                } else if arg.seq == re.seq {
                     reply.wrong_leader = false;
                     reply.err = String::from("OK");
                     reply.value = re.value.clone();
                     return Box::new(futures::future::result(Ok(reply)));
-                }
-                else {
-                    
+                } else {
                     let cmd = OpEntry {
                         seq: arg.seq,
                         name: arg.name.clone(),
@@ -394,22 +421,21 @@ impl KvService for Node {
                         key: arg.key.clone(),
                         value: String::new(),
                     };
-                    
+
                     let ret = server.rf.start(&cmd);
                     match ret {
                         Ok((_index, _term)) => {
                             reply.wrong_leader = false;
                             return Box::new(futures::future::result(Ok(reply)));
-                        },
+                        }
                         Err(_e) => {
                             reply.wrong_leader = true;
                             return Box::new(futures::future::result(Ok(reply)));
-                        },
+                        }
                     }
                 }
-            },
+            }
             None => {
-                
                 let cmd = OpEntry {
                     seq: arg.seq,
                     name: arg.name.clone(),
@@ -417,20 +443,20 @@ impl KvService for Node {
                     key: arg.key.clone(),
                     value: String::new(),
                 };
-                
+
                 let ret = server.rf.start(&cmd);
                 match ret {
                     Ok((_index, _term)) => {
                         reply.wrong_leader = false;
                         return Box::new(futures::future::result(Ok(reply)));
-                    },
+                    }
                     Err(_e) => {
                         reply.wrong_leader = true;
                         return Box::new(futures::future::result(Ok(reply)));
-                    },
+                    }
                 }
             }
-        }    
+        }
     }
 
     fn put_append(&self, arg: PutAppendRequest) -> RpcFuture<PutAppendReply> {
@@ -453,14 +479,11 @@ impl KvService for Node {
                     reply.wrong_leader = true;
                     reply.err = String::from("OK");
                     return Box::new(futures::future::result(Ok(reply)));
-                }
-                else if arg.seq == re.seq {
+                } else if arg.seq == re.seq {
                     reply.wrong_leader = false;
                     reply.err = String::from("OK");
                     return Box::new(futures::future::result(Ok(reply)));
-                }
-                else {
-                    
+                } else {
                     let cmd = OpEntry {
                         seq: arg.seq,
                         name: arg.name.clone(),
@@ -469,20 +492,23 @@ impl KvService for Node {
                         value: arg.value.clone(),
                     };
                     let ret = server.rf.start(&cmd);
-                    my_debug3!("put or append the value existed in requests via raft, cmd{:?}", cmd);
+                    my_debug3!(
+                        "put or append the value existed in requests via raft, cmd{:?}",
+                        cmd
+                    );
                     match ret {
                         Ok((_index, _term)) => {
                             reply.wrong_leader = false;
                             return Box::new(futures::future::result(Ok(reply)));
-                        },
+                        }
                         Err(_e) => {
                             reply.wrong_leader = true;
                             reply.err = String::from("");
                             return Box::new(futures::future::result(Ok(reply)));
-                        },
+                        }
                     }
                 }
-            },
+            }
             None => {
                 my_debug3!("not found in requests");
                 let cmd = OpEntry {
@@ -492,18 +518,21 @@ impl KvService for Node {
                     key: arg.key.clone(),
                     value: arg.value.clone(),
                 };
-                my_debug3!("put or append the value not exist in requests via raft, cmd{:?}", cmd);
+                my_debug3!(
+                    "put or append the value not exist in requests via raft, cmd{:?}",
+                    cmd
+                );
                 let ret = server.rf.start(&cmd);
                 match ret {
                     Ok((_index, _term)) => {
                         reply.wrong_leader = false;
                         return Box::new(futures::future::result(Ok(reply)));
-                    },
+                    }
                     Err(_e) => {
                         reply.wrong_leader = true;
                         reply.err = String::from("");
                         return Box::new(futures::future::result(Ok(reply)));
-                    },
+                    }
                 }
             }
         }
