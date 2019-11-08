@@ -7,9 +7,9 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
+use futures::future::ok;
 use futures::sync::mpsc::UnboundedSender;
 use futures::Future;
-use futures::future::ok;
 use labrpc::RpcFuture;
 
 #[cfg(test)]
@@ -222,7 +222,6 @@ impl Raft {
         if old_term != term {
             self.persist();
         }
-
     }
     pub fn get_log_vec(&self, index: usize) -> Option<Vec<u8>> {
         if (self.log.len() - 1) < index {
@@ -270,11 +269,16 @@ impl Raft {
         let mut next_index = self.next_index.clone().unwrap();
         let old_match_index = match_index[id];
         let old_next_index = next_index[id];
-        if for_next_index <= self.log.len() as u64 && for_next_index > next_index[id]{
+        if for_next_index <= self.log.len() as u64 && for_next_index > next_index[id] {
             match_index[id] = for_next_index - 1;
             next_index[id] = for_next_index;
-            my_debug!("leader {} handle success reply, next_index[{}]: {} -> {}", self.me, id, old_next_index, next_index[id]);
-
+            my_debug!(
+                "leader {} handle success reply, next_index[{}]: {} -> {}",
+                self.me,
+                id,
+                old_next_index,
+                next_index[id]
+            );
         } else {
             // my_debug!(
             //     "error:leader:{} handle_append_reply id:{} for_next_index:{} log:{} ",
@@ -330,8 +334,13 @@ impl Raft {
             next_index[id] = for_next_index;
         }
         self.next_index = Some(next_index.clone());
-        my_debug!("leader {} handle fail reply, next_index[{}]: {} -> {}", self.me, id, old_match_index, next_index[id]);
-
+        my_debug!(
+            "leader {} handle fail reply, next_index[{}]: {} -> {}",
+            self.me,
+            id,
+            old_match_index,
+            next_index[id]
+        );
     }
     /// update commit_index if lots of peers have copied the logs
     pub fn set_commit_index(&mut self, new_commit_index: u64) {
@@ -443,7 +452,6 @@ impl Raft {
                 for i in 0..state.logs.len() {
                     let log = &state.logs[i];
                     self.log.push(log.to_owned());
-
                 }
             }
             Err(e) => {
@@ -469,7 +477,13 @@ impl Raft {
     /// is no need to implement your own timeouts around this method.
     ///
     /// look at the comments in ../labrpc/src/mod.rs for more details.
-    fn send_request_vote(&self, server: usize, args: &RequestVoteArgs, passed: Arc<Mutex<u64>>, amount: u64, ) -> Result<RequestVoteReply> {
+    fn send_request_vote(
+        &self,
+        server: usize,
+        args: &RequestVoteArgs,
+        passed: Arc<Mutex<u64>>,
+        amount: u64,
+    ) -> Result<RequestVoteReply> {
         let peer = &self.peers[server];
         // Your code here if you want the rpc becomes async.
         // Example:
@@ -486,13 +500,11 @@ impl Raft {
         // rx.wait() ...
         // ```
         peer.request_vote(&args).map_err(Error::Rpc).wait()
-
     }
     fn start<M>(&mut self, command: &M) -> Result<(u64, u64)>
-        where
-            M: labcodec::Message,
+    where
+        M: labcodec::Message,
     {
-
         // Your code here (2B).
         // if this node is a leader, append the log into leader's logs
         if self.is_leader() {
@@ -508,7 +520,6 @@ impl Raft {
             Err(Error::NotLeader)
         }
     }
-
 }
 
 // Choose concurrency paradigm.
@@ -631,23 +642,32 @@ impl Node {
 
                         if ret.vote_granted {
                             *passed.lock().unwrap() += 1;
-                            my_debug!("node {} get success vote reply from {}, pass: {}", raft.me, i, *passed.lock().unwrap());
+                            my_debug!(
+                                "node {} get success vote reply from {}, pass: {}",
+                                raft.me,
+                                i,
+                                *passed.lock().unwrap()
+                            );
                             if *passed.lock().unwrap() > amount2 / 2
                                 && term == raft.get_term()
                                 && raft.is_candidate()
                             {
                                 raft.set_state(term, true, false);
                                 my_debug!("{} become leader!", raft.me);
-                                let _ret = node.append_entries_reset.lock().unwrap().clone().unwrap().send(1);
-
-
+                                let _ret = node
+                                    .append_entries_reset
+                                    .lock()
+                                    .unwrap()
+                                    .clone()
+                                    .unwrap()
+                                    .send(1);
                             }
                         } else if ret.term > raft.get_term() {
                             let _ret = node.timeout_reset.lock().unwrap().clone().unwrap().send(1);
                             raft.set_state(ret.term, false, false);
                         }
-
-                    }).map_err(|_|{()})
+                    })
+                    .map_err(|_| ()),
             );
         }
     }
@@ -663,9 +683,7 @@ impl Node {
                     break;
                 }
                 // set a rand timeout
-                let time = Duration::from_millis(
-                    APPEND_ENTRIES_INTERVAL
-                );
+                let time = Duration::from_millis(APPEND_ENTRIES_INTERVAL);
                 // if time doesn't exceed, continue
                 if let Ok(_) = recv.recv_timeout(time) {
                     if *node.shutdown.lock().unwrap() == true {
@@ -679,7 +697,6 @@ impl Node {
                     if node.is_leader() {
                         node.do_append_entries();
                     }
-
                 }
             }
         });
@@ -781,8 +798,8 @@ impl Node {
     ///
     /// This method must return without blocking on the raft.
     pub fn start<M>(&self, command: &M) -> Result<(u64, u64)>
-        where
-            M: labcodec::Message,
+    where
+        M: labcodec::Message,
     {
         // Your code here.
         // Example:
@@ -864,7 +881,7 @@ impl RaftService for Node {
         // Your code here (2A, 2B).
         // unimplemented!()
         let node = self.clone();
-        Box::new(ok(()).map(move |_|{
+        Box::new(ok(()).map(move |_| {
             let mut raft = node.raft.lock().unwrap();
             let mut reply = RequestVoteReply {
                 term: raft.get_term(),
@@ -885,19 +902,24 @@ impl RaftService for Node {
                 None => {
                     let last_log_index = raft.get_last_log_index() as u64;
                     let last_log_term = raft.get_last_log_term();
-                    if (last_log_term == args.last_log_term && last_log_index <= args.last_log_index)
+                    if (last_log_term == args.last_log_term
+                        && last_log_index <= args.last_log_index)
                         || last_log_term < args.last_log_term
                     {
                         reply.vote_granted = true;
                         raft.voted_for = Some(args.candidate_id as usize);
                         raft.persist();
-                        my_debug!("node {} vote for node {}, term: {}", raft.me, args.candidate_id, args.term);
+                        my_debug!(
+                            "node {} vote for node {}, term: {}",
+                            raft.me,
+                            args.candidate_id,
+                            args.term
+                        );
                     }
                 }
             }
             reply
-        })
-        )
+        }))
     }
     //  append_entries RPC handler.
     fn append_entries(&self, args: RequestEntryArgs) -> RpcFuture<RequestEntryReply> {
@@ -933,9 +955,7 @@ impl RaftService for Node {
                         for i in 0..args.entries.len() {
                             let log = args.entries[i].clone();
 
-
-                            let node_entry =
-                                raft.get_log_vec(args.prev_log_index as usize + 1 + i);
+                            let node_entry = raft.get_log_vec(args.prev_log_index as usize + 1 + i);
                             // consistency check
                             match node_entry {
                                 Some(n_en) => {
@@ -947,7 +967,7 @@ impl RaftService for Node {
                                         raft.delete_log(args.prev_log_index as usize + i);
                                         raft.append_log(&log);
                                     }
-                                },
+                                }
                                 None => {
                                     my_debug!("{:?}aaaaa", log);
                                     raft.append_log(&log);
@@ -967,7 +987,11 @@ impl RaftService for Node {
                 }
                 // when the log is not matched, find the eraliest log in the conflict term
                 else {
-                    my_debug!("log not match, en.term:{}, args.prev_term:{}", en.term, args.prev_log_term);
+                    my_debug!(
+                        "log not match, en.term:{}, args.prev_term:{}",
+                        en.term,
+                        args.prev_log_term
+                    );
                     reply.conflict_term = en.term;
                     for i in (raft.log.len() - 1)..1 {
                         let entry = raft.get_log(i);
@@ -976,12 +1000,12 @@ impl RaftService for Node {
                                 if en.term == reply.conflict_term {
                                     reply.earlist_conflict_index = i as u64;
                                 }
-                            },
+                            }
                             None => {}
                         }
                     }
                 }
-            },
+            }
             None => {
                 reply.next_index = raft.log.len() as u64;
                 reply.fail_type = 1;

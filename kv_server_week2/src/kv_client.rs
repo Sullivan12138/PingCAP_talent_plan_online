@@ -1,6 +1,6 @@
-use std::sync::Arc;
 use crate::protos;
 use grpcio::{ChannelBuilder, EnvBuilder};
+use std::sync::Arc;
 
 use protos::kvserver::{DeleteRequest, GetRequest, PutRequest, ResponseStatus, ScanRequest};
 use protos::kvserver_grpc::KvdbClient;
@@ -59,5 +59,3 @@ impl Client {
         }
     }
 }
-
-

@@ -1,11 +1,11 @@
-use std::sync::Arc;
+use futures::sync::oneshot;
+use futures::Future;
 use grpcio::{Environment, ServerBuilder};
 use lib::kv_server::DbService;
-use std::{io, thread};
-use futures::sync::oneshot;
 use lib::protos::kvserver_grpc;
 use std::io::Read;
-use futures::Future;
+use std::sync::Arc;
+use std::{io, thread};
 
 fn main() {
     let env = Arc::new(Environment::new(1));

@@ -107,7 +107,6 @@ fn test_basic_agree_2b() {
     cfg.end()
 }
 
-
 #[test]
 fn test_fail_agree_2b() {
     let servers = 3;
@@ -536,7 +535,6 @@ fn test_count_2b() {
     cfg.end();
 }
 
-
 #[test]
 fn test_persist1_2c() {
     let servers = 3;
@@ -726,7 +724,6 @@ fn test_figure_8_2c() {
     cfg.end();
 }
 
-
 #[test]
 fn test_unreliable_agree_2c() {
     let servers = 5;
@@ -765,7 +762,6 @@ fn test_unreliable_agree_2c() {
 
     cfg.end();
 }
-
 
 #[test]
 fn test_figure_8_unreliable_2c() {

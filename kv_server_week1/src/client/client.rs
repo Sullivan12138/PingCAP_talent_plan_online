@@ -1,15 +1,14 @@
-extern crate protobuf;
-extern crate grpcio;
 extern crate futures;
+extern crate grpcio;
+extern crate protobuf;
 
 use crate::protos;
-
 
 use std::sync::Arc;
 
 use grpcio::{ChannelBuilder, EnvBuilder};
 
-use protos::kvserver::{ResponseStatus, GetRequest, PutRequest, DeleteRequest, ScanRequest};
+use protos::kvserver::{DeleteRequest, GetRequest, PutRequest, ResponseStatus, ScanRequest};
 use protos::kvserver_grpc::KvdbClient;
 
 use std::collections::HashMap;
@@ -24,9 +23,7 @@ impl Client {
         let ch = ChannelBuilder::new(env).connect(addr.as_ref());
         let kv_client = KvdbClient::new(ch);
 
-        Client {
-            client: kv_client,
-        }
+        Client { client: kv_client }
     }
     pub fn get(&self, key: String) -> Option<String> {
         let mut request = GetRequest::new();
@@ -34,7 +31,7 @@ impl Client {
         let ret = self.client.get(&request).expect("RPC failed");
         match ret.status {
             ResponseStatus::kSuccess => Some(ret.value),
-            ResponseStatus::kNotFound | ResponseStatus::kFailed | ResponseStatus::kNoType => None
+            ResponseStatus::kNotFound | ResponseStatus::kFailed | ResponseStatus::kNoType => None,
         }
     }
     pub fn put(&self, key: String, value: String) -> bool {
@@ -44,7 +41,7 @@ impl Client {
         let ret = self.client.put(&request).expect("RPC failed");
         match ret.status {
             ResponseStatus::kSuccess => true,
-            ResponseStatus::kNotFound | ResponseStatus::kFailed | ResponseStatus::kNoType => false
+            ResponseStatus::kNotFound | ResponseStatus::kFailed | ResponseStatus::kNoType => false,
         }
     }
     pub fn delete(&self, key: String) -> bool {
@@ -53,19 +50,17 @@ impl Client {
         let ret = self.client.delete(&request).expect("RPC failed");
         match ret.status {
             ResponseStatus::kSuccess | ResponseStatus::kNotFound => true,
-            ResponseStatus::kFailed | ResponseStatus::kNoType => false
+            ResponseStatus::kFailed | ResponseStatus::kNoType => false,
         }
     }
-    pub fn scan(&self, key_start: String, key_end: String) -> Option<HashMap<String,String>> {
+    pub fn scan(&self, key_start: String, key_end: String) -> Option<HashMap<String, String>> {
         let mut request = ScanRequest::new();
         request.set_key_start(key_start);
         request.set_key_end(key_end);
         let ret = self.client.scan(&request).expect("RPC failed");
         match ret.status {
             ResponseStatus::kSuccess => Some(ret.key_value),
-            ResponseStatus::kNotFound | ResponseStatus::kFailed | ResponseStatus::kNoType => None
+            ResponseStatus::kNotFound | ResponseStatus::kFailed | ResponseStatus::kNoType => None,
         }
-
     }
-    
 }

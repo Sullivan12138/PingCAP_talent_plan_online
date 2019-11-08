@@ -1,13 +1,13 @@
 extern crate grpcio;
 extern crate lib;
-use std::sync::Arc;
-use std::thread;
+use chrono::prelude::*;
 use grpcio::Environment;
 use grpcio::ServerBuilder;
-use lib::protos::kvserver_grpc;
 use lib::kv_client::Client;
 use lib::kv_server::DbService;
-use chrono::prelude::*;
+use lib::protos::kvserver_grpc;
+use std::sync::Arc;
+use std::thread;
 // the amount of threads
 const THREAD_NUM: u16 = 1000;
 // the amount of set operations in one thread
@@ -16,7 +16,7 @@ const SET_NUM: u16 = 9;
 const VALUE_WIDTH: usize = 128;
 const TIME_THRESHOLD: f64 = 9.0;
 // generate a value of certain width
-fn gen_value(v: u64) -> String{
+fn gen_value(v: u64) -> String {
     format!("{:>0width$}", v, width = VALUE_WIDTH)
 }
 #[test]
@@ -42,12 +42,11 @@ fn test_persistence_and_concurrency() {
     // test the concurrency
     // the required concurrency should > 1000
     for _i in 0..THREAD_NUM {
-        let handle = thread::spawn(move||{
+        let handle = thread::spawn(move || {
             let client = Client::new(test_host.to_owned(), test_port);
             for _j in 0..SET_NUM {
                 client.put("aa".to_owned(), gen_value(1234567));
             }
-
         });
         handles.push(handle);
     }

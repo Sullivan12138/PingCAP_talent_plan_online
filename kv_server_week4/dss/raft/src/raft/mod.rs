@@ -325,8 +325,8 @@ impl Raft {
     }
     // int test.rs client will call this method to send logs to nodes
     fn start<M>(&mut self, command: &M) -> Result<(u64, u64)>
-        where
-            M: labcodec::Message,
+    where
+        M: labcodec::Message,
     {
         let index = self.snapshot_index + self.log.len() as u64;
         let term = self.get_term();
@@ -491,18 +491,18 @@ impl Raft {
         } else if fail_type == 0 {
             for i in (self.snapshot_index as usize + 1)
                 ..(self.snapshot_index as usize + self.log.len() - 1)
-                {
-                    let entry = self.get_log(i);
-                    match entry {
-                        Some(en) => {
-                            if en.term == conflict_term {
-                                next_index[id] = i as u64;
-                                can_find = true;
-                            }
+            {
+                let entry = self.get_log(i);
+                match entry {
+                    Some(en) => {
+                        if en.term == conflict_term {
+                            next_index[id] = i as u64;
+                            can_find = true;
                         }
-                        None => {}
                     }
+                    None => {}
                 }
+            }
             if can_find == false {
                 next_index[id] = earlist_conflict_index;
             }
@@ -678,23 +678,31 @@ impl Node {
             let args2 = args.clone();
             let amount2 = amount as u64;
             peer.spawn(
-               peer.request_vote(&args2).map(move |ret| {
-                   let mut raft = node.raft.lock().unwrap();
-                   if ret.vote_granted {
-                       *passed.lock().unwrap() += 1;
-                       if *passed.lock().unwrap() > amount2 / 2
-                           && term == raft.get_term()
-                           && raft.is_candidate()
-                       {
-                           raft.set_state(term, true, false);
-                           my_debug!("{} become leader!", raft.me);
-                           let _ret = node.append_entries_reset.lock().unwrap().clone().unwrap().send(1);
-                       }
-                   } else if ret.term > raft.get_term() {
-                       let _ret = node.timeout_reset.lock().unwrap().clone().unwrap().send(1);
-                       raft.set_state(ret.term, false, false);
-                   }
-               }).map_err(|_|{})
+                peer.request_vote(&args2)
+                    .map(move |ret| {
+                        let mut raft = node.raft.lock().unwrap();
+                        if ret.vote_granted {
+                            *passed.lock().unwrap() += 1;
+                            if *passed.lock().unwrap() > amount2 / 2
+                                && term == raft.get_term()
+                                && raft.is_candidate()
+                            {
+                                raft.set_state(term, true, false);
+                                my_debug!("{} become leader!", raft.me);
+                                let _ret = node
+                                    .append_entries_reset
+                                    .lock()
+                                    .unwrap()
+                                    .clone()
+                                    .unwrap()
+                                    .send(1);
+                            }
+                        } else if ret.term > raft.get_term() {
+                            let _ret = node.timeout_reset.lock().unwrap().clone().unwrap().send(1);
+                            raft.set_state(ret.term, false, false);
+                        }
+                    })
+                    .map_err(|_| {}),
             );
         }
     }
@@ -755,22 +763,24 @@ impl Node {
                     data: raft.persister.snapshot(),
                 };
                 peer.spawn(
-                    peer.install_snapshot(&args).map(move |ret| {
-                        let mut raft = node.raft.lock().unwrap();
-                        if ret.term > raft.get_term() {
-                            let _ret =
-                                node.timeout_reset.lock().unwrap().clone().unwrap().send(1);
-                            raft.set_state(ret.term, false, false);
-                        }
-                        if raft.is_leader() {
-                            let mut next_index = raft.next_index.clone().unwrap();
-                            let mut match_index = raft.match_index.clone().unwrap();
-                            next_index[i] = args.last_included_index + 1;
-                            match_index[i] = args.last_included_index;
-                            raft.next_index = Some(next_index.clone());
-                            raft.match_index = Some(match_index.clone());
-                        }
-                    }).map_err(|_|{})
+                    peer.install_snapshot(&args)
+                        .map(move |ret| {
+                            let mut raft = node.raft.lock().unwrap();
+                            if ret.term > raft.get_term() {
+                                let _ret =
+                                    node.timeout_reset.lock().unwrap().clone().unwrap().send(1);
+                                raft.set_state(ret.term, false, false);
+                            }
+                            if raft.is_leader() {
+                                let mut next_index = raft.next_index.clone().unwrap();
+                                let mut match_index = raft.match_index.clone().unwrap();
+                                next_index[i] = args.last_included_index + 1;
+                                match_index[i] = args.last_included_index;
+                                raft.next_index = Some(next_index.clone());
+                                raft.match_index = Some(match_index.clone());
+                            }
+                        })
+                        .map_err(|_| {}),
                 );
             } else {
                 let mut args = RequestEntryArgs {
@@ -798,35 +808,32 @@ impl Node {
                     }
                 }
                 peer.spawn(
-                    peer.append_entries(&args).map(move |ret| {
-                        let mut raft = node.raft.lock().unwrap();
-                        if ret.success {
-                            if ret.term == raft.get_term() {
-                                raft.handle_success_reply(i, ret.next_index);
-                            }
-                        } else {
-                            if ret.term > raft.get_term() {
-                                let _ret = node
-                                    .timeout_reset
-                                    .lock()
-                                    .unwrap()
-                                    .clone()
-                                    .unwrap()
-                                    .send(1);
-                                raft.set_state(ret.term, false, false);
-                            } else {
+                    peer.append_entries(&args)
+                        .map(move |ret| {
+                            let mut raft = node.raft.lock().unwrap();
+                            if ret.success {
                                 if ret.term == raft.get_term() {
-                                    raft.handle_fail_reply(
-                                        i,
-                                        ret.fail_type,
-                                        ret.next_index,
-                                        ret.conflict_term,
-                                        ret.earlist_conflict_index,
-                                    );
+                                    raft.handle_success_reply(i, ret.next_index);
+                                }
+                            } else {
+                                if ret.term > raft.get_term() {
+                                    let _ret =
+                                        node.timeout_reset.lock().unwrap().clone().unwrap().send(1);
+                                    raft.set_state(ret.term, false, false);
+                                } else {
+                                    if ret.term == raft.get_term() {
+                                        raft.handle_fail_reply(
+                                            i,
+                                            ret.fail_type,
+                                            ret.next_index,
+                                            ret.conflict_term,
+                                            ret.earlist_conflict_index,
+                                        );
+                                    }
                                 }
                             }
-                        }
-                    }).map_err(|_|{})
+                        })
+                        .map_err(|_| {}),
                 );
             }
         }
@@ -844,8 +851,8 @@ impl Node {
     ///
     /// This method must return without blocking on the raft.
     pub fn start<M>(&self, command: &M) -> Result<(u64, u64)>
-        where
-            M: labcodec::Message,
+    where
+        M: labcodec::Message,
     {
         // Your code here.
         // Example:
@@ -1033,17 +1040,17 @@ impl RaftService for Node {
                     reply.conflict_term = en.term;
                     for i in
                         (raft.snapshot_index + raft.log.len() as u64 - 1)..(raft.snapshot_index + 1)
-                        {
-                            let entry = raft.get_log(i as usize);
-                            match entry {
-                                Some(en) => {
-                                    if en.term == reply.conflict_term {
-                                        reply.earlist_conflict_index = i;
-                                    }
+                    {
+                        let entry = raft.get_log(i as usize);
+                        match entry {
+                            Some(en) => {
+                                if en.term == reply.conflict_term {
+                                    reply.earlist_conflict_index = i;
                                 }
-                                None => {}
                             }
+                            None => {}
                         }
+                    }
                     return Box::new(futures::future::result(Ok(reply)));
                 }
             }

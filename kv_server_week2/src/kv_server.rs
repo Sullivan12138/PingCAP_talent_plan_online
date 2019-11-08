@@ -1,5 +1,5 @@
-use crate::protos;
 use crate::database;
+use crate::protos;
 use std::io::Read;
 use std::sync::Arc;
 use std::{io, thread};
@@ -117,4 +117,3 @@ impl DbService {
         }
     }
 }
-

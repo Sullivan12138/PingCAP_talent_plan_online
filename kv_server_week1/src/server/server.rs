@@ -1,10 +1,9 @@
-extern crate protobuf;
-extern crate grpcio;
 extern crate futures;
+extern crate grpcio;
+extern crate protobuf;
 
-use crate::protos;
 use crate::engine;
-
+use crate::protos;
 
 use std::io::Read;
 use std::sync::Arc;
@@ -14,19 +13,21 @@ use futures::sync::oneshot;
 use futures::Future;
 use grpcio::{Environment, RpcContext, ServerBuilder, UnarySink};
 
-
-use protos::kvserver::{ResponseStatus, GetRequest, GetResponse, PutRequest, PutResponse, DeleteRequest, DeleteResponse, ScanRequest, ScanResponse};
+use protos::kvserver::{
+    DeleteRequest, DeleteResponse, GetRequest, GetResponse, PutRequest, PutResponse,
+    ResponseStatus, ScanRequest, ScanResponse,
+};
 use protos::kvserver_grpc::{self, Kvdb};
 
 use engine::dbengine::DbEngine;
 
 #[derive(Clone)]
-pub struct DbService{
+pub struct DbService {
     db_engine: DbEngine,
 }
 
-impl Kvdb for DbService{
-    fn get(&mut self, ctx: RpcContext, req: GetRequest, sink: UnarySink<GetResponse>){
+impl Kvdb for DbService {
+    fn get(&mut self, ctx: RpcContext, req: GetRequest, sink: UnarySink<GetResponse>) {
         let mut response = GetResponse::new();
         println!("Received GetRequest {{ {:?} }}", req);
         let engine = &mut self.db_engine;
@@ -38,11 +39,12 @@ impl Kvdb for DbService{
                     response.set_value(value);
                 }
                 None => response.set_status(ResponseStatus::kNotFound),
-            }
+            },
             Err(_) => response.set_status(ResponseStatus::kFailed),
         }
 
-        let f = sink.success(response.clone())
+        let f = sink
+            .success(response.clone())
             .map(move |_| println!("Responded with  {{ {:?} }}", response))
             .map_err(move |err| eprintln!("Failed to reply: {:?}", err));
         ctx.spawn(f)
@@ -58,7 +60,8 @@ impl Kvdb for DbService{
             }
             Err(_) => response.set_status(ResponseStatus::kFailed),
         }
-        let f = sink.success(response.clone())
+        let f = sink
+            .success(response.clone())
             .map(move |_| println!("Responded with  {{ {:?} }}", response))
             .map_err(move |err| eprintln!("Failed to reply: {:?}", err));
         ctx.spawn(f)
@@ -70,12 +73,13 @@ impl Kvdb for DbService{
         let ret = engine.delete(&req.key);
         match ret {
             Ok(op) => match op {
-                        Some(_) => response.set_status(ResponseStatus::kSuccess),
-                        None => response.set_status(ResponseStatus::kNotFound),
-                    }
+                Some(_) => response.set_status(ResponseStatus::kSuccess),
+                None => response.set_status(ResponseStatus::kNotFound),
+            },
             Err(_) => response.set_status(ResponseStatus::kFailed),
         }
-        let f = sink.success(response.clone())
+        let f = sink
+            .success(response.clone())
             .map(move |_| println!("Responded with  {{ {:?} }}", response))
             .map_err(move |err| eprintln!("Failed to reply: {:?}", err));
         ctx.spawn(f)
@@ -92,18 +96,19 @@ impl Kvdb for DbService{
                     response.set_key_value(key_value);
                 }
                 None => response.set_status(ResponseStatus::kNotFound),
-            }
+            },
             Err(_) => response.set_status(ResponseStatus::kFailed),
         }
 
-        let f = sink.success(response.clone())
+        let f = sink
+            .success(response.clone())
             .map(move |_| println!("Responded with  {{ {:?} }}", response))
             .map_err(move |err| eprintln!("Failed to reply: {:?}", err));
         ctx.spawn(f)
     }
 }
 
-impl DbService{
+impl DbService {
     pub fn new() -> Self {
         println!("new DbService");
         DbService {

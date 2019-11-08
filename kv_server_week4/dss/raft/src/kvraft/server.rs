@@ -244,9 +244,9 @@ impl Node {
                 }
                 // deal with the request asynchronously
                 if let Ok(Async::Ready(Some(apply_msg))) =
-                futures::executor::spawn(futures::lazy(|| {
-                    node2.server.lock().unwrap().apply_ch.poll()
-                }))
+                    futures::executor::spawn(futures::lazy(|| {
+                        node2.server.lock().unwrap().apply_ch.poll()
+                    }))
                     .wait_future()
                 {
                     if !apply_msg.command_valid {

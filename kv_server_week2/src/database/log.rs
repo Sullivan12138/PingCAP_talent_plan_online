@@ -67,7 +67,7 @@ impl Log {
             match log {
                 Ok(o) => {
                     logs.push(o);
-                },
+                }
                 Err(e) => {
                     println!("error load log:{:?}", e);
                 }

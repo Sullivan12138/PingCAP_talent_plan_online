@@ -20,7 +20,7 @@ fn main() {
             "0" => {
                 println!("Thanks for using.");
                 break;
-            },
+            }
             "1" => {
                 println!("Please input the key:");
                 let mut key = String::new();
@@ -30,12 +30,12 @@ fn main() {
                 match ret {
                     Some(value) => {
                         println!("Get successfully! The value is {}", value);
-                    },
+                    }
                     None => {
                         println!("Sorry, the key isn't found in database, please check your input or insert it.");
                     }
                 }
-            },
+            }
             "2" => {
                 println!("Please input the key:");
                 let mut key = String::new();
@@ -49,12 +49,12 @@ fn main() {
                 match ret {
                     true => {
                         println!("Set successfully!");
-                    },
+                    }
                     false => {
                         println!("Set failed.");
                     }
                 }
-            },
+            }
             "3" => {
                 println!("Please input the key:");
                 let mut key = String::new();
@@ -64,12 +64,12 @@ fn main() {
                 match ret {
                     true => {
                         println!("Delete successfully!");
-                    },
+                    }
                     false => {
                         println!("Delete failed");
                     }
                 }
-            },
+            }
             "4" => {
                 println!("Please input the start key:");
                 let mut start_key = String::new();
@@ -90,16 +90,15 @@ fn main() {
                         for (k, v) in map.iter() {
                             println!("key: {}, value: {}", k, v);
                         }
-                    },
+                    }
                     None => {
                         println!("Sorry, the range you want doesn't exist in the database, please check your input.");
                     }
                 }
-            },
+            }
             _ => {
                 println!("Please input a number between 0 and 4!");
             }
         }
     }
-
 }
