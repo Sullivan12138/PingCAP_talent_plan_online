@@ -547,7 +547,6 @@ impl Node {
             append_entries_thread: Arc::new(Mutex::new(None)),
             append_entries_reset: Arc::new(Mutex::new(None)),
         };
-        let node2 = node.clone();
         node.create_timeout_thread();
         node.create_append_entries_thread();
         my_debug!("New inode:{}", node.raft.lock().unwrap().me);

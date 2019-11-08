@@ -11,6 +11,13 @@ path = "src/lib.rs"
 test = true
 bench = false
 
+[[bin]]
+name = "client"
+path = "src/client.rs"
+
+[[bin]]
+name = "server"
+path = "src/server.rs"
 
 [dependencies]
 protobuf = "~2"

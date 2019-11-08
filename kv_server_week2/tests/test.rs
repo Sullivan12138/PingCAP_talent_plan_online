@@ -5,8 +5,8 @@ use std::thread;
 use grpcio::Environment;
 use grpcio::ServerBuilder;
 use lib::protos::kvserver_grpc;
-use lib::client::Client;
-use lib::server::DbService;
+use lib::kv_client::Client;
+use lib::kv_server::DbService;
 use chrono::prelude::*;
 // the amount of threads
 const THREAD_NUM: u16 = 1000;
@@ -58,10 +58,12 @@ fn test_persistence_and_concurrency() {
     let use_time = (end_time.timestamp_millis() - start_time.timestamp_millis()) as f64 / 1000.0;
     assert!(use_time < TIME_THRESHOLD);
     let client = Client::new(test_host.to_owned(), test_port);
-    client.put("bb".to_owned(), "222".to_owned());
-    client.put("cc".to_owned(), "333".to_owned());
-    client.put("dd".to_owned(), "444".to_owned());
+    // set some special characters to test
+    client.put("b\0b".to_owned(), "22\02".to_owned());
+    client.put("c\tc".to_owned(), "33\t3".to_owned());
+    client.put("d\nd".to_owned(), "44\n4".to_owned());
     client.put("ee".to_owned(), "555".to_owned());
+    // test the delete operation
     client.delete("ee".to_owned());
     server.shutdown();
     // then restart the server
@@ -72,8 +74,8 @@ fn test_persistence_and_concurrency() {
         .build()
         .unwrap();
     server.start();
-    assert_eq!(client.get("bb".to_owned()), Some("222".to_owned()));
-    assert_eq!(client.get("cc".to_owned()), Some("333".to_owned()));
-    assert_eq!(client.get("dd".to_owned()), Some("444".to_owned()));
+    assert_eq!(client.get("b\0b".to_owned()), Some("22\02".to_owned()));
+    assert_eq!(client.get("c\tc".to_owned()), Some("33\t3".to_owned()));
+    assert_eq!(client.get("d\nd".to_owned()), Some("44\n4".to_owned()));
     assert_eq!(client.get("ee".to_owned()), None);
 }

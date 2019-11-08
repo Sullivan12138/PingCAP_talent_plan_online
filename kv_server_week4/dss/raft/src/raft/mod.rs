@@ -591,7 +591,7 @@ pub struct Node {
     timeout_thread: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
     timeout_reset: Arc<Mutex<Option<Sender<u64>>>>,
     append_entries_thread: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
-
+    append_entries_reset: Arc<Mutex<Option<Sender<u64>>>>,
 }
 
 impl Node {
@@ -604,14 +604,16 @@ impl Node {
             timeout_thread: Arc::new(Mutex::new(None)),
             timeout_reset: Arc::new(Mutex::new(None)),
             append_entries_thread: Arc::new(Mutex::new(None)),
+            append_entries_reset: Arc::new(Mutex::new(None)),
         };
-        Node::create_timeout_thread(node.clone());
+        node.create_timeout_thread();
+        node.create_append_entries_thread();
         my_debug!("New inode:{}", node.raft.lock().unwrap().me);
         node
     }
-    pub fn create_timeout_thread(node: Node) {
+    pub fn create_timeout_thread(&self) {
         let (timeout_reset, recv) = mpsc::channel();
-        let node2 = node.clone();
+        let node = self.clone();
         let thread1 = thread::spawn(move || {
             loop {
                 // set a rand timeout
@@ -620,29 +622,29 @@ impl Node {
                 );
                 // if time doesn't exceed, continue
                 if let Ok(_) = recv.recv_timeout(rand_time) {
-                    if *node2.shutdown.lock().unwrap() == true {
+                    if *node.shutdown.lock().unwrap() == true {
                         break;
                     }
                     continue;
                 } else {
-                    if *node2.shutdown.lock().unwrap() == true {
+                    if *node.shutdown.lock().unwrap() == true {
                         break;
                     }
                     // if time exceeds but itself has already become leader, conntinue
-                    if node2.is_leader() {
+                    if node.is_leader() {
                         continue;
                     }
                     // otherwise send request_vote
-                    Node::do_vote(node2.clone());
+                    node.clone().do_vote();
                 }
             }
         });
-        *node.timeout_thread.lock().unwrap() = Some(thread1);
-        *node.timeout_reset.lock().unwrap() = Some(timeout_reset);
+        *self.timeout_thread.lock().unwrap() = Some(thread1);
+        *self.timeout_reset.lock().unwrap() = Some(timeout_reset);
     }
 
-    pub fn do_vote(node: Node) {
-        let mut raft = node.raft.lock().unwrap(); // lock
+    pub fn do_vote(&self) {
+        let mut raft = self.raft.lock().unwrap(); // lock
         let mut current_term = raft.get_term();
         current_term += 1;
         let id = raft.me;
@@ -669,7 +671,7 @@ impl Node {
             if i == id {
                 continue;
             }
-            let node2 = node.clone();
+            let node = self.clone();
             let passed = Arc::clone(&passed);
             let peer = peers[i].clone();
             let term = raft.get_term().clone();
@@ -677,7 +679,7 @@ impl Node {
             let amount2 = amount as u64;
             peer.spawn(
                peer.request_vote(&args2).map(move |ret| {
-                   let mut raft = node2.raft.lock().unwrap();
+                   let mut raft = node.raft.lock().unwrap();
                    if ret.vote_granted {
                        *passed.lock().unwrap() += 1;
                        if *passed.lock().unwrap() > amount2 / 2
@@ -686,67 +688,45 @@ impl Node {
                        {
                            raft.set_state(term, true, false);
                            my_debug!("{} become leader!", raft.me);
-                           let node3 = node2.clone();
-                           thread::spawn(move || {
-                               Node::do_append_thread(node3);
-                           });
+                           let _ret = node.append_entries_reset.lock().unwrap().clone().unwrap().send(1);
                        }
                    } else if ret.term > raft.get_term() {
-                       let _ret = node2.timeout_reset.lock().unwrap().clone().unwrap().send(1);
+                       let _ret = node.timeout_reset.lock().unwrap().clone().unwrap().send(1);
                        raft.set_state(ret.term, false, false);
                    }
                }).map_err(|_|{})
             );
-//            thread::spawn(move || {
-//                let ret = peer.request_vote(&args2).map_err(Error::Rpc).wait();
-//                match ret {
-//                    Ok(t) => {
-//                        let mut raft = node2.raft.lock().unwrap();
-//                        if t.vote_granted {
-//                            *passed.lock().unwrap() += 1;
-//                            if *passed.lock().unwrap() > amount2 / 2
-//                                && term == raft.get_term()
-//                                && raft.is_candidate()
-//                            {
-//                                raft.set_state(term, true, false);
-//                                my_debug!("{} become leader!", raft.me);
-//                                let node3 = node2.clone();
-//                                thread::spawn(move || {
-//                                    Node::do_append_thread(node3);
-//                                });
-//                            }
-//                        } else if t.term > raft.get_term() {
-//                            let _ret = node2.timeout_reset.lock().unwrap().clone().unwrap().send(1);
-//                            raft.set_state(t.term, false, false);
-//                        }
-//                    }
-//                    Err(e) => {
-//                        my_debug!("send requests vote error: {:?}", e);
-//                    }
-//                }
-//            });
         }
     }
 
-    pub fn do_append_thread(node: Node) {
-        let node2 = node.clone();
+    pub fn create_append_entries_thread(&self) {
+        let (append_entries_reset, recv) = mpsc::channel();
+        let node = self.clone();
         let thread1 = thread::spawn(move || loop {
-            let interval = Duration::from_millis(APPEND_ENTRIES_INTERVAL);
-            thread::sleep(interval);
-            if *node2.shutdown.lock().unwrap() == true {
+            if *node.shutdown.lock().unwrap() == true {
                 break;
             }
-            if node2.is_leader() {
-                Node::do_append_entries(node2.clone());
-            } else {
+            let interval = Duration::from_millis(APPEND_ENTRIES_INTERVAL);
+            if let Ok(_) = recv.recv_timeout(interval) {
+                if *node.shutdown.lock().unwrap() == true {
+                    break;
+                }
                 continue;
+            } else {
+                if *node.shutdown.lock().unwrap() == true {
+                    break;
+                }
+                if node.is_leader() {
+                    node.do_append_entries();
+                }
             }
         });
-        *node.append_entries_thread.lock().unwrap() = Some(thread1);
+        *self.append_entries_thread.lock().unwrap() = Some(thread1);
+        *self.append_entries_reset.lock().unwrap() = Some(append_entries_reset);
     }
 
-    pub fn do_append_entries(node: Node) {
-        let raft = node.raft.lock().unwrap();
+    pub fn do_append_entries(&self) {
+        let raft = self.raft.lock().unwrap();
         let id = raft.me;
         let amount = raft.get_peers_amount();
         let next_index = match raft.next_index.clone() {
@@ -762,7 +742,7 @@ impl Node {
                 continue;
             }
             let peer = raft.peers[i].clone();
-            let node2 = node.clone();
+            let node = self.clone();
             let prev_log_index2 = next_index[i] - 1;
             if prev_log_index2 < raft.snapshot_index {
                 // send snapshot to followers which are too late in term
@@ -776,10 +756,10 @@ impl Node {
                 };
                 peer.spawn(
                     peer.install_snapshot(&args).map(move |ret| {
-                        let mut raft = node2.raft.lock().unwrap();
+                        let mut raft = node.raft.lock().unwrap();
                         if ret.term > raft.get_term() {
                             let _ret =
-                                node2.timeout_reset.lock().unwrap().clone().unwrap().send(1);
+                                node.timeout_reset.lock().unwrap().clone().unwrap().send(1);
                             raft.set_state(ret.term, false, false);
                         }
                         if raft.is_leader() {
@@ -792,28 +772,6 @@ impl Node {
                         }
                     }).map_err(|_|{})
                 );
-//                thread::spawn(move || {
-//                    let ret = peer.install_snapshot(&args).map_err(Error::Rpc).wait();
-//                    match ret {
-//                        Ok(o) => {
-//                            let mut raft = node2.raft.lock().unwrap();
-//                            if o.term > raft.get_term() {
-//                                let _ret =
-//                                    node2.timeout_reset.lock().unwrap().clone().unwrap().send(1);
-//                                raft.set_state(o.term, false, false);
-//                            }
-//                            if raft.is_leader() {
-//                                let mut next_index = raft.next_index.clone().unwrap();
-//                                let mut match_index = raft.match_index.clone().unwrap();
-//                                next_index[i] = args.last_included_index + 1;
-//                                match_index[i] = args.last_included_index;
-//                                raft.next_index = Some(next_index.clone());
-//                                raft.match_index = Some(match_index.clone());
-//                            }
-//                        }
-//                        Err(_e) => {}
-//                    }
-//                });
             } else {
                 let mut args = RequestEntryArgs {
                     term: raft.get_term(),
@@ -841,14 +799,14 @@ impl Node {
                 }
                 peer.spawn(
                     peer.append_entries(&args).map(move |ret| {
-                        let mut raft = node2.raft.lock().unwrap();
+                        let mut raft = node.raft.lock().unwrap();
                         if ret.success {
                             if ret.term == raft.get_term() {
                                 raft.handle_success_reply(i, ret.next_index);
                             }
                         } else {
                             if ret.term > raft.get_term() {
-                                let _ret = node2
+                                let _ret = node
                                     .timeout_reset
                                     .lock()
                                     .unwrap()
@@ -870,44 +828,6 @@ impl Node {
                         }
                     }).map_err(|_|{})
                 );
-//                thread::spawn(move || {
-//                    my_debug!("leader:{} do heart beat:{} args:[term:{} prev_index:{} prev_term:{} commit:{} entry_num:{}] ",
-//                    id, i, args.term, args.prev_log_index, args.prev_log_term, args.leader_commit, args.entries.len());
-//                    let ret = peer.append_entries(&args).map_err(Error::Rpc).wait();
-//                    match ret {
-//                        Ok(t) => {
-//                            let mut raft = node2.raft.lock().unwrap();
-//                            if t.success {
-//                                if t.term == raft.get_term() {
-//                                    raft.handle_success_reply(i, t.next_index);
-//                                }
-//                            } else {
-//                                if t.term > raft.get_term() {
-//                                    let _ret = node2
-//                                        .timeout_reset
-//                                        .lock()
-//                                        .unwrap()
-//                                        .clone()
-//                                        .unwrap()
-//                                        .send(1);
-//                                    raft.set_state(t.term, false, false);
-//                                    my_debug!("leader {} become follower because it meets a bigger term {} from {}", id, t.term, i);
-//                                } else {
-//                                    if t.term == raft.get_term() {
-//                                        raft.handle_fail_reply(
-//                                            i,
-//                                            t.fail_type,
-//                                            t.next_index,
-//                                            t.conflict_term,
-//                                            t.earlist_conflict_index,
-//                                        );
-//                                    }
-//                                }
-//                            }
-//                        }
-//                        Err(_e) => {}
-//                    }
-//                });
             }
         }
     }
